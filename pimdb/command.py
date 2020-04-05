@@ -4,6 +4,7 @@ import os
 from enum import Enum
 from typing import List, Optional
 
+from pimdb import __version__
 from pimdb.common import download_imdb_dataset, log, ImdbDataset, IMDB_DATASET_NAMES, GzippedTsvReader, PimdbError
 from pimdb.database import Database, typed_column_to_value_map
 
@@ -36,6 +37,7 @@ def _parser() -> argparse.ArgumentParser:
             f"default: {_DEFAULT_LOG_LEVEL}"
         ),
     )
+    result.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
 
     subparsers = result.add_subparsers(dest="command", help="command to run")
 
