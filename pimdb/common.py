@@ -59,6 +59,23 @@ class ImdbDataset(Enum):
         return f"{self.value}".replace(".", "_")
 
 
+class ReportTable(Enum):
+    ALIAS_TYPE = "alias_type"
+    CATEGORY = "category"
+    CHARACTER = "character"
+    GENRE = "genre"
+    NAME = "name"
+    NAME_TO_PROFESSION = "name_to_profession"
+    PRINCIPAL_TO_CHARACTER = "principal_to_character"
+    PROFESSION = "profession"
+    TITLE = "title"
+    TITLE_TO_DIRECTOR = "title_to_director"
+    TITLE_TO_WRITER = "title_to_writer"
+    TITLE_TO_PRINCIPAL = "title_to_principal"
+    TITLE_TO_TYPE = "title_to_title_type"
+    TITLE_TYPE = "title_type"
+
+
 #: Names of all available IMDb datasets.
 IMDB_DATASET_NAMES = [dataset.value for dataset in ImdbDataset]
 IMDB_DATASET_TO_KEY_COLUMNS_MAP = {

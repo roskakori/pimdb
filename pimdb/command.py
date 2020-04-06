@@ -4,9 +4,19 @@ import os
 from enum import Enum
 from typing import List, Optional
 
+from sqlalchemy.engine import Connection
+
 from pimdb import __version__
-from pimdb.common import download_imdb_dataset, log, ImdbDataset, IMDB_DATASET_NAMES, GzippedTsvReader, PimdbError
-from pimdb.database import Database, typed_column_to_value_map
+from pimdb.common import (
+    download_imdb_dataset,
+    log,
+    ImdbDataset,
+    IMDB_DATASET_NAMES,
+    GzippedTsvReader,
+    PimdbError,
+    ReportTable,
+)
+from pimdb.database import typed_column_to_value_map, Database, sql_code
 
 _DEFAULT_BULK_SIZE = 128
 _DEFAULT_DATABASE = "sqlite:///pimdb.db"
@@ -19,9 +29,10 @@ _ALL_NAME = "all"
 _VALID_NAMES = [_ALL_NAME] + IMDB_DATASET_NAMES
 
 
-class _CommandName(Enum):
-    """Available command line commands."""
+class CommandName(Enum):
+    """Available command line sub commands."""
 
+    BUILD = "build"
     DOWNLOAD = "download"
     TRANSFER = "transfer"
 
@@ -37,11 +48,11 @@ def _parser() -> argparse.ArgumentParser:
             f"default: {_DEFAULT_LOG_LEVEL}"
         ),
     )
-    result.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
+    result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     subparsers = result.add_subparsers(dest="command", help="command to run")
 
-    download_parser = subparsers.add_parser(_CommandName.DOWNLOAD.value, help="download IMDb datasets")
+    download_parser = subparsers.add_parser(CommandName.DOWNLOAD.value, help="download IMDb datasets")
     download_parser.add_argument(
         "names",
         metavar="NAME",
@@ -53,7 +64,7 @@ def _parser() -> argparse.ArgumentParser:
     download_parser.add_argument("--out", "-o", default="", help="output folder; default: current folder")
 
     transfer_parser = subparsers.add_parser(
-        _CommandName.TRANSFER.value, help="transfer downloaded IMDb dataset files into SQL tables"
+        CommandName.TRANSFER.value, help="transfer downloaded IMDb dataset files into SQL tables"
     )
     transfer_parser.add_argument(
         "names",
@@ -71,9 +82,6 @@ def _parser() -> argparse.ArgumentParser:
         help="bulk size of changes before they are flushed to the database; default: %(default)s",
     )
     transfer_parser.add_argument(
-        "--clear", "-C", action="store_true", help="clear possibly existing data instead of attempting a delta transfer"
-    )
-    transfer_parser.add_argument(
         "--database",
         "-d",
         default=_DEFAULT_DATABASE,
@@ -86,6 +94,15 @@ def _parser() -> argparse.ArgumentParser:
         default="",
         help="source folder where the dataset files to transfer are located; default: current folder",
     )
+
+    build_parser = subparsers.add_parser(CommandName.BUILD.value, help="build sanitized tables for reporting")
+    build_parser.add_argument(
+        "--database",
+        "-d",
+        default=_DEFAULT_DATABASE,
+        help="database to connect to using SQLAlchemy engine syntax; default: %(default)s",
+    )
+
     return result
 
 
@@ -111,7 +128,6 @@ class _TransferCommand:
         self._imdb_datasets = _checked_imdb_dataset_names(parser, args)
         self._database = Database(args.database)
         self._database.create_imdb_dataset_tables()
-        self._is_clear_tables = args.clear
         self._bulk_size = args.bulk_size
         self._from_folder = args.from_folder
         self._insert_count = 0
@@ -157,8 +173,32 @@ class _TransferCommand:
                 self._data_to_insert.clear()
 
 
+class _BuildCommand:
+    def __init__(self, parser, args: argparse.Namespace):
+        self._database = Database(args.database)
+        self._connection: Optional[Connection] = None
+
+    def run(self):
+        self._database.create_imdb_dataset_tables()
+        self._database.create_report_tables()
+        with self._database.connection() as self._connection:
+            self._database.build_title_type_table(self._connection)
+            self._database.build_alias_type_table(self._connection)
+            self._database.build_key_table_from_query(
+                self._connection, ReportTable.GENRE, sql_code("select_genre_keys"), ","
+            )
+            self._database.build_key_table_from_query(
+                self._connection, ReportTable.PROFESSION, sql_code("select_profession_keys"), ",",
+            )
+            # self._database.build_name_table(self._connection)
+            self._database.build_title_table(self._connection)
+            # self._database.build_title_to_director_table(self._connection)
+            # self._database.build_title_to_writer_table(self._connection)
+            pass  # TODO: Remove
+
+
 def main(arguments: Optional[List[str]] = None):
-    command = None
+    command_name = None
     try:
         parser = _parser()
         args = parser.parse_args(arguments)
@@ -168,18 +208,20 @@ def main(arguments: Optional[List[str]] = None):
         if args.log == "sql":
             logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
-        command = _CommandName(args.command)
-        if command == _CommandName.DOWNLOAD:
+        command_name = CommandName(args.command)
+        if command_name == CommandName.BUILD:
+            _BuildCommand(parser, args).run()
+        elif command_name == CommandName.DOWNLOAD:
             _download(parser, args)
-        elif command == _CommandName.TRANSFER:
+        elif command_name == CommandName.TRANSFER:
             _TransferCommand(parser, args).run()
         else:
             assert False, f"args={args}"
     except OSError as error:
-        if command is None:
+        if command_name is None:
             log.error(error)
         else:
-            log.error('cannot perform command "%s": %s', command.value, error)
+            log.error('cannot perform command "%s": %s', command_name.value, error)
     except KeyboardInterrupt:
         log.error("interrupted by user")
 
