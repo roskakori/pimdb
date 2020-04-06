@@ -14,9 +14,8 @@ from pimdb.common import (
     IMDB_DATASET_NAMES,
     GzippedTsvReader,
     PimdbError,
-    ReportTable,
 )
-from pimdb.database import typed_column_to_value_map, Database, sql_code
+from pimdb.database import typed_column_to_value_map, Database
 
 _DEFAULT_BULK_SIZE = 128
 _DEFAULT_DATABASE = "sqlite:///pimdb.db"
@@ -182,19 +181,14 @@ class _BuildCommand:
         self._database.create_imdb_dataset_tables()
         self._database.create_report_tables()
         with self._database.connection() as self._connection:
-            self._database.build_title_type_table(self._connection)
+            self._database.build_profession_table(self._connection)
             self._database.build_alias_type_table(self._connection)
-            self._database.build_key_table_from_query(
-                self._connection, ReportTable.GENRE, sql_code("select_genre_keys"), ","
-            )
-            self._database.build_key_table_from_query(
-                self._connection, ReportTable.PROFESSION, sql_code("select_profession_keys"), ",",
-            )
-            # self._database.build_name_table(self._connection)
+            self._database.build_genre_table(self._connection)
+            self._database.build_title_type_table(self._connection)
+            self._database.build_name_table(self._connection)
             self._database.build_title_table(self._connection)
-            # self._database.build_title_to_director_table(self._connection)
-            # self._database.build_title_to_writer_table(self._connection)
-            pass  # TODO: Remove
+            self._database.build_title_to_director_table(self._connection)
+            self._database.build_title_to_writer_table(self._connection)
 
 
 def main(arguments: Optional[List[str]] = None):

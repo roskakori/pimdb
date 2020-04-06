@@ -1,5 +1,4 @@
-import os
-from typing import List, Dict, Tuple, Union, Optional, Sequence, Any
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from sqlalchemy import (
     Column,
@@ -15,9 +14,10 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.sql import select, text
+from sqlalchemy.sql import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.functions import coalesce
+from sqlalchemy.sql.selectable import SelectBase
 
 from pimdb.common import log, ImdbDataset, PimdbError, ReportTable
 
@@ -43,9 +43,6 @@ _ALIAS_TYPES_LENGTH = 64
 
 #: The "title_akas.attributes" field is a mess.
 _ATTRIBUTES_LENGTH = 128
-
-#: Folder where SQL source code is stored.
-_SQL_FOLDER = os.path.join(os.path.dirname(__file__), "sql")
 
 IMDB_ALIAS_TYPES = ["alternative", "dvd", "festival", "tv", "video", "working", "original", "imdbDisplay"]
 
@@ -244,14 +241,6 @@ def typed_column_to_value_map(
     return result
 
 
-def sql_code(name: str) -> str:
-    """SQL source code stored in a file in the "sql" folder."""
-    sql_path = os.path.join(_SQL_FOLDER, f"{name}.sql")
-    log.debug('reading sql: "%s"', sql_path)
-    with open(sql_path, encoding="utf-8") as sql_file:
-        return sql_file.read()
-
-
 class Database:
     def __init__(self, engine_info: str):
         # FIXME: Remove possible username and password from logged engine info.
@@ -326,18 +315,14 @@ class Database:
         )
 
     def build_key_table_from_query(
-        self, connection: Connection, report_table: ReportTable, query: Union[str, Any], delimiter: Optional[str] = None
+        self, connection: Connection, report_table: ReportTable, query: SelectBase, delimiter: Optional[str] = None
     ) -> Table:
         table_to_build = self.report_table_for(report_table)
         log.info("building key table: %s (from query)", table_to_build.name)
-        if isinstance(query, str):
-            single_line_query = " ".join(query.replace("\n", " ").split())
-            log.debug("querying key values: %s", single_line_query)
-            select_statement = text(query)
-        else:
-            select_statement = query
+        single_line_query = " ".join(str(query).replace("\n", " ").split())
+        log.debug("querying key values: %s", single_line_query)
         values = set()
-        for (raw_value,) in connection.execute(select_statement):
+        for (raw_value,) in connection.execute(query):
             if delimiter is None:
                 values.add(raw_value)
             else:
@@ -374,6 +359,23 @@ class Database:
         title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
         self.build_key_table_from_query(
             connection, ReportTable.TITLE_TYPE, select([title_basics_table.c.titleType]).distinct()
+        )
+
+    def build_genre_table(self, connection: Connection):
+        title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
+        genres_column = title_basics_table.c.genres
+        self.build_key_table_from_query(
+            connection, ReportTable.GENRE, select([genres_column]).where(genres_column.isnot(None)).distinct()
+        )
+
+    def build_profession_table(self, connection: Connection):
+        name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
+        primary_profession_column = name_basics_table.c.primaryProfession
+        self.build_key_table_from_query(
+            connection,
+            ReportTable.PROFESSION,
+            select([primary_profession_column]).where(primary_profession_column.isnot(None)).distinct(),
+            ",",
         )
 
     def build_name_table(self, connection: Connection) -> None:
