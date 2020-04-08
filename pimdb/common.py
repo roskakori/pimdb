@@ -5,7 +5,7 @@ import logging
 import os.path
 import time
 from enum import Enum
-from typing import Optional, Generator, Dict, Callable, Tuple
+from typing import Optional, Generator, Dict, Callable, Tuple, Set, Any
 
 import requests
 
@@ -171,6 +171,7 @@ class GzippedTsvReader:
         key_columns: Tuple[str],
         indicate_progress: Optional[Callable[[int, int], None]] = None,
         seconds_between_progress_update: float = 3.0,
+        filtered_name_to_values_map: Optional[Dict[str, Set[str]]] = None,
     ):
         self._gzipped_tsv_path = gzipped_tsv_path
         self._row_number = None
@@ -178,6 +179,7 @@ class GzippedTsvReader:
         self._duplicate_count = None
         self._indicate_progress = indicate_progress
         self._seconds_between_progress_update = seconds_between_progress_update
+        self._filtered_name_to_values_map = filtered_name_to_values_map
 
     @property
     def gzipped_tsv_path(self) -> str:
@@ -209,10 +211,30 @@ class GzippedTsvReader:
             try:
                 for result in tsv_reader:
                     self._row_number += 1
-                    key = tuple(result[key_column] for key_column in self._key_columns)
+                    try:
+                        key = tuple(result[key_column] for key_column in self._key_columns)
+                    except KeyError as error:
+                        raise PimdbTsvError(
+                            self.gzipped_tsv_path,
+                            self.row_number,
+                            f'cannot find key "{error}" for key columns {self._key_columns}: row_map={result}',
+                        ) from error
                     if key not in existing_keys:
                         existing_keys.add(key)
-                        yield result
+                        try:
+                            is_filter_match = self._filtered_name_to_values_map is None or all(
+                                result[name_to_filter] in values_to_filter
+                                for name_to_filter, values_to_filter in self._filtered_name_to_values_map.items()
+                            )
+                        except KeyError as error:
+                            raise PimdbTsvError(
+                                self.gzipped_tsv_path,
+                                self.row_number,
+                                f"cannot evaluate filter: key_columns={self._key_columns}, "
+                                f"filtered_name_to_values_map={self._filtered_name_to_values_map}",
+                            ) from error
+                        if is_filter_match:
+                            yield result
                     else:
                         log.debug("%s: ignoring duplicate %s=%s", self.location, self._key_columns, key)
                         self._duplicate_count += 1
@@ -224,4 +246,34 @@ class GzippedTsvReader:
                 if self._duplicate_count != last_progress_row_number and self._indicate_progress is not None:
                     self._indicate_progress(self.row_number, self.duplicate_count)
             except csv.Error as error:
-                raise PimdbTsvError(self.gzipped_tsv_path, self.row_number, str(error))
+                raise PimdbTsvError(self.gzipped_tsv_path, self.row_number, str(error)) from error
+
+
+class TsvDictWriter:
+    def __init__(self, target_file):
+        self._target_file = target_file
+        self._line_number = None
+        self._column_names = None
+
+    @property
+    def line_number(self) -> int:
+        assert self._line_number is not None
+        return self._line_number
+
+    def write(self, name_to_value_map: Dict[str, Any]):
+        if self._column_names is None:
+            self._column_names = list(name_to_value_map.keys())
+            self._line_number = 1
+            heading = "\t".join(self._column_names) + "\n"
+            self._target_file.write(heading)
+        self._line_number += 1
+        try:
+            self._target_file.write(
+                "\t".join(name_to_value_map[column_name] for column_name in self._column_names) + "\n"
+            )
+        except Exception as error:
+            raise PimdbTsvError(
+                self._target_file,
+                self.line_number,
+                f"cannot write TSV row: {error}; name_to_value_map={name_to_value_map}",
+            ) from error

@@ -1,61 +1,26 @@
 import argparse
-import gzip
 import logging
 import os
-import re
-from typing import List, Optional, Generator, Set
+from typing import List, Optional, Set, Dict, Any
 
 from pimdb import __version__
-from pimdb.common import ImdbDataset
+from pimdb.common import GzippedTsvReader, TsvDictWriter, ImdbDataset, IMDB_DATASET_TO_KEY_COLUMNS_MAP
 
 TEST_NCONSTS = [
     # "nm0000616",  # Eric Roberts
     # "nm0001376",  # Isabelle Huppert
     # "nm0233757",  # Jaco Van Dormael
     # "nm0567408",  # Hattie McDaniel
+    # "nm0707425",  # Rajinikanth
     # "nm1382571",  # Michael Ostrowski
     # "nm1801453",  # Achita Sikamana
     "nm3658287",  # Bianca Bradey
+    # "nm5148470",  # Terry DeCastro
 ]
 
 _DEFAULT_TARGET_FOLDER = os.path.join(os.path.dirname(__file__), "data")
 
-log = logging.getLogger(__name__)
-
-
-class GzippedTsvLineReader:
-    def __init__(self, gzipped_tsv_path: str, consts_to_filter: Set[str], include_heading=True):
-        self._gzipped_tsv_path = gzipped_tsv_path
-        self._line_number = None
-        self._include_heading = include_heading
-        # FIXME: The current line based reading and regex based filtering does not scale well.
-        #  A faster way would be to use a DictReader and check for the columns nconst or tconst
-        #  to be within const_to_filter.
-        self._filter_regex = re.compile(f".*({'|'.join(consts_to_filter)}).*")
-
-    @property
-    def gzipped_tsv_path(self) -> str:
-        return self._gzipped_tsv_path
-
-    @property
-    def line_number(self) -> int:
-        assert self._line_number is not None
-        return self._line_number
-
-    @property
-    def location(self) -> str:
-        row_number_text = f" ({self.line_number})" if self.line_number is not None else ""
-        return f"{os.path.basename(self.gzipped_tsv_path)}{row_number_text}"
-
-    def filtered_lines(self) -> Generator[str, None, None]:
-        log.info('filtering IMDb dataset from "%s"', self.gzipped_tsv_path)
-        with gzip.open(self.gzipped_tsv_path, "rt", encoding="utf-8", newline="") as tsv_file:
-            self._line_number = 0
-            for line in tsv_file:
-                self._line_number += 1
-                is_heading = self._include_heading and self._line_number == 1
-                if is_heading or self._filter_regex.match(line) is not None:
-                    yield line
+log = logging.getLogger("pimdb.tests." + os.path.splitext(os.path.basename(__file__))[0])
 
 
 def _parsed_arguments(args: Optional[List[str]]) -> argparse.Namespace:
@@ -87,22 +52,31 @@ def _parsed_arguments(args: Optional[List[str]]) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-def gzipped_tsv_line_reader(
-    folder: str, imdb_dataset: ImdbDataset, consts_to_filter: List[str], include_heading=True
-) -> GzippedTsvLineReader:
-    return GzippedTsvLineReader(os.path.join(folder, imdb_dataset.filename), consts_to_filter, include_heading)
+def gzipped_tsv_reader(
+    folder: str, imdb_dataset: ImdbDataset, filtered_names_to_values_map: Dict[str, Any]
+) -> GzippedTsvReader:
+    return GzippedTsvReader(
+        os.path.join(folder, imdb_dataset.filename),
+        IMDB_DATASET_TO_KEY_COLUMNS_MAP[imdb_dataset],
+        _log_progress,
+        10,
+        filtered_name_to_values_map=filtered_names_to_values_map,
+    )
 
 
-def extracted_tconsts(gzipped_tsv_folder: str, regex_prefix: str, consts_to_filter: List[str]) -> Set[str]:
-    assert regex_prefix in ["nm", "tt"]
-    result = set()
-    tconst_regex = re.compile(fr".*(?P<tconst>{regex_prefix}\w+).*", re.ASCII)
-    line_reader = gzipped_tsv_line_reader(gzipped_tsv_folder, ImdbDataset.TITLE_PRINCIPALS, consts_to_filter, False)
-    for line in line_reader.filtered_lines():
-        tconst_match = tconst_regex.match(line)
-        if tconst_match is not None:
-            tconst = tconst_match.group("tconst")
-            result.add(tconst)
+def _log_progress(processed_count, _):
+    log.info("  processed %d rows", processed_count)
+
+
+def extracted_tconsts(
+    gzipped_tsv_folder: str, result_column_name: str, filtered_column_name: str, filtered_values: Set[str]
+) -> Set[str]:
+    tsv_reader = gzipped_tsv_reader(
+        gzipped_tsv_folder,
+        ImdbDataset.TITLE_PRINCIPALS,
+        filtered_names_to_values_map={filtered_column_name: filtered_values},
+    )
+    result = {name_to_value_map[result_column_name] for name_to_value_map in tsv_reader.column_names_to_value_maps()}
     return result
 
 
@@ -110,27 +84,35 @@ def main(args: Optional[List[str]] = None):
     arguments = _parsed_arguments(args)
     log.info("collecting tconsts to filter for")
     tconsts = (
-        extracted_tconsts(arguments.dataset_folder, "tt", TEST_NCONSTS)
+        extracted_tconsts(arguments.dataset_folder, "tconst", "nconst", TEST_NCONSTS)
         if not arguments.quick
         else {"tt0468569", "tt0089941", "tt11029976"}
     )
     log.info("  found %d titles", len(tconsts))
     log.info("collecting nconsts to filter for")
     nconsts = (
-        extracted_tconsts(arguments.dataset_folder, "nm", tconsts)
+        extracted_tconsts(arguments.dataset_folder, "nconst", "tconst", tconsts)
         if not arguments.quick
         else {"nm0000616", "nm0001173"}
     )
     log.info("  found %d names", len(nconsts))
-    for imdb_dataset in ImdbDataset:
+    for imdb_dataset in ImdbDataset:  # TODO: Remove: [ImdbDataset.TITLE_PRINCIPALS]:  # TODO: ImdbDataset:
         target_path = os.path.join(arguments.target_folder, imdb_dataset.filename[:-3])
         log.info("writing %s", target_path)
         line_count = 0
-        with open(target_path, "w", encoding="utf-8") as target_file:
-            consts_to_filter = nconsts if imdb_dataset == ImdbDataset.NAME_BASICS else tconsts
-            reader = gzipped_tsv_line_reader(arguments.dataset_folder, imdb_dataset, consts_to_filter)
-            for line in reader.filtered_lines():
-                target_file.write(line)
+        with open(target_path, "w", newline="", encoding="utf-8") as target_file:
+            tsv_writer = TsvDictWriter(target_file)
+            filtered_name_to_values_map = {}
+            if imdb_dataset == ImdbDataset.TITLE_AKAS:
+                filtered_name_to_values_map["titleId"] = tconsts
+            else:
+                if imdb_dataset != ImdbDataset.NAME_BASICS:
+                    filtered_name_to_values_map["tconst"] = tconsts
+                if imdb_dataset in [ImdbDataset.NAME_BASICS, ImdbDataset.TITLE_PRINCIPALS]:
+                    filtered_name_to_values_map["nconst"] = nconsts
+            reader = gzipped_tsv_reader(arguments.dataset_folder, imdb_dataset, filtered_name_to_values_map,)
+            for name_to_value_map in reader.column_names_to_value_maps():
+                tsv_writer.write(name_to_value_map)
                 line_count += 1
         log.info("  lines written: %d", line_count)
 
