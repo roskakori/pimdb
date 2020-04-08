@@ -65,6 +65,7 @@ class ReportTable(Enum):
     CHARACTER = "character"
     GENRE = "genre"
     NAME = "name"
+    NAME_TO_KNOWN_FOR_TITLE = "name_to_known_for_title"
     NAME_TO_PROFESSION = "name_to_profession"
     PRINCIPAL_TO_CHARACTER = "principal_to_character"
     PROFESSION = "profession"

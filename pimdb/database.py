@@ -141,6 +141,17 @@ _REPORT_TABLE_INFOS = [
         ],
     ),
     (
+        ReportTable.NAME_TO_KNOWN_FOR_TITLE,
+        [
+            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+            Column("ordering", Integer, nullable=False),
+            Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
+            UniqueConstraint("name_id", "ordering"),
+            Index("index__name_to_known_for_title__name_id", "name_id"),
+            Index("index__name_to_known_for_title__title_id", "title_id"),
+        ],
+    ),
+    (
         ReportTable.NAME_TO_PROFESSION,
         [
             Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
@@ -250,6 +261,7 @@ class Database:
         self._imdb_dataset_to_table_map = None
         self._report_name_to_table_map = {}
         self._nconst_to_name_id_map = None
+        self._tconst_to_title_id_map = None
         self._unknown_type_id = None
 
     @property
@@ -286,6 +298,14 @@ class Database:
             name_select = select([name_table.c.id, name_table.c.nconst])
             self._nconst_to_name_id_map = {nconst: name_id for name_id, nconst in connection.execute(name_select)}
         return self._nconst_to_name_id_map
+
+    def tconst_to_title_id_map(self, connection: Connection):
+        if self._tconst_to_title_id_map is None:
+            log.info("building mapping for tconst to title_id")
+            title_table = self.report_table_for(ReportTable.TITLE)
+            title_select = select([title_table.c.id, title_table.c.tconst])
+            self._tconst_to_title_id_map = {tconst: title_id for title_id, tconst in connection.execute(title_select)}
+        return self._tconst_to_title_id_map
 
     def create_imdb_dataset_tables(self):
         log.info("creating imdb dataset tables")
@@ -378,9 +398,13 @@ class Database:
             ",",
         )
 
+    @staticmethod
+    def _log_building_table(table: Table) -> None:
+        log.info("building %s table", table.name)
+
     def build_name_table(self, connection: Connection) -> None:
-        log.info("building name table")
         name_table = self.report_table_for(ReportTable.NAME)
+        Database._log_building_table(name_table)
         name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
         with connection.begin():
             delete_statement = name_table.delete().execution_options(autocommit=True)
@@ -397,6 +421,40 @@ class Database:
                 ),
             )
             connection.execute(insert_statement)
+
+    def build_name_to_known_for_title_table(self, connection: Connection):
+        name_to_known_for_title_table = self.report_table_for(ReportTable.NAME_TO_KNOWN_FOR_TITLE)
+        Database._log_building_table(name_to_known_for_title_table)
+        name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
+        name_table = self.report_table_for(ReportTable.NAME)
+        known_for_titles_column = name_basics_table.c.knownForTitles
+        select_known_for_title_tconsts = (
+            select([name_table.c.id, name_table.c.nconst, known_for_titles_column])
+            .select_from(name_table.join(name_basics_table, name_basics_table.c.nconst == name_table.c.nconst))
+            .where(known_for_titles_column.isnot(None))
+        )
+        with connection.begin():
+            tconst_to_title_id_map = self.tconst_to_title_id_map(connection)
+            name_basics_table.delete()
+            for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
+                ordering = 0
+                for tconst in known_for_titles_tconsts.split(","):
+                    title_id = tconst_to_title_id_map.get(tconst)
+                    if title_id is not None:
+                        ordering += 1
+                        connection.execute(
+                            name_to_known_for_title_table.insert(
+                                {"name_id": name_id, "ordering": ordering, "title_id": title_id}
+                            )
+                        )
+                    else:
+                        log.warning(
+                            'ignored unknown %s.%s "%s" for name "%s"',
+                            name_basics_table.name,
+                            known_for_titles_column.name,
+                            tconst,
+                            nconst,
+                        )
 
     def build_name_to_profession_table(self, connection: Connection) -> None:
         log.info("building name_to_profession table")
@@ -482,7 +540,7 @@ class Database:
                         target_table.insert({"name_id": director_name_id, "ordering": ordering, "title_id": title_id})
                     else:
                         log.warning(
-                            'ignoring unknown %s.%s "%s" for title tconst "%s"',
+                            'ignored unknown %s.%s "%s" for title "%s"',
                             title_crew_table.name,
                             column_with_nconsts_name,
                             director_nconst,
