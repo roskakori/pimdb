@@ -2,7 +2,7 @@ import pytest
 
 from pimdb.command import ImdbDataset
 from pimdb.command import main, CommandName
-from tests._common import gzipped_tests_data_path, TESTS_DATA_PATH
+from tests._common import gzipped_tests_data_path, sqlite_engine, TESTS_DATA_PATH
 
 
 @pytest.fixture
@@ -34,4 +34,5 @@ def test_can_show_version():
 
 
 def test_can_transfer_all_datasets(gzip_tsv_files):
-    main(["transfer", "--from", TESTS_DATA_PATH, "--database", "sqlite://", "all"])
+    database_engine = sqlite_engine(test_can_transfer_all_datasets)
+    main(["transfer", "--from", TESTS_DATA_PATH, "--database", database_engine, "all"])

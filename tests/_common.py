@@ -2,6 +2,8 @@
 import gzip
 import logging
 import os
+from typing import Callable
+
 from pimdb.command import ImdbDataset
 
 TESTS_DATA_PATH = os.path.join(os.path.dirname(__file__), "data")
@@ -14,6 +16,11 @@ def output_path(name):
     result = os.path.join(TESTS_OUTPUT_PATH, name)
     os.makedirs(os.path.dirname(result), exist_ok=True)
     return result
+
+
+def sqlite_engine(test_function: Callable) -> str:
+    database_path = os.path.abspath(output_path(test_function.__name__ + ".db"))
+    return "sqlite:///" + database_path
 
 
 def gzipped_tests_data_path(dataset: ImdbDataset) -> str:
