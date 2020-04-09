@@ -1,8 +1,10 @@
+import os
+
 import pytest
 
 from pimdb.command import ImdbDataset
 from pimdb.command import main, CommandName
-from tests._common import gzipped_tests_data_path, sqlite_engine, TESTS_DATA_PATH
+from tests._common import gzipped_tests_data_path, output_path, sqlite_engine, TESTS_DATA_PATH
 
 
 @pytest.fixture
@@ -35,4 +37,22 @@ def test_can_show_version():
 
 def test_can_transfer_all_datasets(gzip_tsv_files):
     database_engine = sqlite_engine(test_can_transfer_all_datasets)
-    main(["transfer", "--from", TESTS_DATA_PATH, "--database", database_engine, "all"])
+    exit_code = main(["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "all"])
+    assert exit_code == 0
+
+
+def test_can_download_title_ratings():
+    expected_target_path = output_path(ImdbDataset.TITLE_RATINGS.filename)
+    exit_code = main(
+        ["download", "--dataset-folder", os.path.dirname(expected_target_path), ImdbDataset.TITLE_RATINGS.value]
+    )
+    assert exit_code == 0
+    assert os.path.exists(expected_target_path)
+
+
+def test_can_build_report_tables(gzip_tsv_files):
+    database_engine = sqlite_engine(test_can_build_report_tables)
+    exit_code = main(["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "all"])
+    assert exit_code == 0
+    exit_code = main(["build", "--database", database_engine])
+    assert exit_code == 0

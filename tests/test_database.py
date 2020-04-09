@@ -3,6 +3,7 @@ from functools import lru_cache
 from sqlalchemy.sql import select
 
 from pimdb.database import Database, ReportTable
+from tests._common import sqlite_engine, TESTS_DATA_PATH
 
 _EXPECTED_KEY_VALUES = {"red", "green", "blue"}
 
@@ -35,3 +36,10 @@ def test_can_build_key_table_from_query(memory_database):
         profession_table = memory_database.report_table_for(ReportTable.PROFESSION)
         actual_colors = set(color for color, in connection.execute(select([profession_table.c.name])).fetchall())
     assert actual_colors == _EXPECTED_KEY_VALUES
+
+
+def test_can_transfer_datasets():
+    engine_info = sqlite_engine(test_can_transfer_datasets)
+    database = _create_database_with_tables(engine_info)
+    with database.connection() as connection:
+        database.build_all_dataset_tables(connection, TESTS_DATA_PATH)

@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+import os
+from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable
 
 from sqlalchemy import (
     Column,
@@ -19,9 +20,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.functions import coalesce
 from sqlalchemy.sql.selectable import SelectBase
 
-from pimdb.common import log, ImdbDataset, PimdbError, ReportTable
+from pimdb.common import log, ImdbDataset, PimdbError, ReportTable, GzippedTsvReader, IMDB_DATASET_NAMES
 
-_metadata = MetaData()
+#: Default number of bulk data (for e.g. SQL insert) to be collected in memory before they are sent to the database.
+DEFAULT_BULK_SIZE = 128
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
@@ -51,63 +53,77 @@ _ALIAS_TYPES_LENGTH = sum(len(item) for item in IMDB_ALIAS_TYPES)
 
 _TITLE_TYPE_LENGTH = 16  # TODO: document current maximum.
 
-#: SQL Tables that represent a direct copy of a TSV file (excluding duplicates)
-IMDB_DATSET_TABLE_INFO = [
-    [
-        ImdbDataset.TITLE_BASICS,
-        Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-        Column("titleType", String(_TITLE_TYPE_LENGTH)),
-        Column("primaryTitle", String(_TITLE_LENGTH)),
-        Column("originalTitle", String(_TITLE_LENGTH)),
-        Column("isAdult", Boolean, nullable=False),
-        Column("startYear", Integer),
-        Column("endYear", Integer),
-        Column("runtimeMinutes", Integer),
-        Column("genres", String((_GENRE_LENGTH + 1) * _GENRE_COUNT - 1)),
-    ],
-    [
-        ImdbDataset.NAME_BASICS,
-        Column("nconst", String(_NCONST_LENGTH), nullable=False, primary_key=True),
-        Column("primaryName", String(_NAME_LENGTH), nullable=False),
-        Column("birthYear", Integer),
-        Column("deathYear", Integer),
-        Column("primaryProfession", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
-        Column("knownForTitles", String((_TCONST_LENGTH + 1) * 4 - 1)),
-    ],
-    [
-        ImdbDataset.TITLE_AKAS,
-        Column("titleId", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-        Column("ordering", Integer, nullable=False, primary_key=True),
-        Column("title", String(_TITLE_LENGTH)),
-        Column("region", String(_REGION_LENGTH)),
-        Column("language", String(_LANGUAGE_LENGTH)),
-        Column("types", String(_ALIAS_TYPES_LENGTH)),
-        Column("attributes", String(_ATTRIBUTES_LENGTH)),
-        # NOTE: isOriginalTitle sometimes actually is null.
-        Column("isOriginalTitle", Boolean),
-    ],
-    [
-        ImdbDataset.TITLE_CREW,
-        Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-        Column("directors", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
-        Column("writers", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
-    ],
-    [
-        ImdbDataset.TITLE_PRINCIPALS,
-        Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-        Column("ordering", Integer, nullable=False, primary_key=True),
-        Column("nconst", String(_NCONST_LENGTH)),
-        Column("category", String(_CATEGORY_LENGTH)),
-        Column("job", String(_JOB_LENGTH)),
-        Column("characters", String),
-    ],
-    [
-        ImdbDataset.TITLE_RATINGS,
-        Column("tconst", String, nullable=False, primary_key=True),
-        Column("averageRating", Float, nullable=False),
-        Column("numVotes", Integer, nullable=False),
-    ],
-]
+
+def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
+    """SQL tables that represent a direct copy of a TSV file (excluding duplicates)"""
+    return [
+        (
+            ImdbDataset.TITLE_BASICS,
+            [
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("titleType", String(_TITLE_TYPE_LENGTH)),
+                Column("primaryTitle", String(_TITLE_LENGTH)),
+                Column("originalTitle", String(_TITLE_LENGTH)),
+                Column("isAdult", Boolean, nullable=False),
+                Column("startYear", Integer),
+                Column("endYear", Integer),
+                Column("runtimeMinutes", Integer),
+                Column("genres", String((_GENRE_LENGTH + 1) * _GENRE_COUNT - 1)),
+            ],
+        ),
+        (
+            ImdbDataset.NAME_BASICS,
+            [
+                Column("nconst", String(_NCONST_LENGTH), nullable=False, primary_key=True),
+                Column("primaryName", String(_NAME_LENGTH), nullable=False),
+                Column("birthYear", Integer),
+                Column("deathYear", Integer),
+                Column("primaryProfession", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
+                Column("knownForTitles", String((_TCONST_LENGTH + 1) * 4 - 1)),
+            ],
+        ),
+        (
+            ImdbDataset.TITLE_AKAS,
+            [
+                Column("titleId", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("ordering", Integer, nullable=False, primary_key=True),
+                Column("title", String(_TITLE_LENGTH)),
+                Column("region", String(_REGION_LENGTH)),
+                Column("language", String(_LANGUAGE_LENGTH)),
+                Column("types", String(_ALIAS_TYPES_LENGTH)),
+                Column("attributes", String(_ATTRIBUTES_LENGTH)),
+                # NOTE: isOriginalTitle sometimes actually is null.
+                Column("isOriginalTitle", Boolean),
+            ],
+        ),
+        (
+            ImdbDataset.TITLE_CREW,
+            [
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("directors", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
+                Column("writers", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
+            ],
+        ),
+        (
+            ImdbDataset.TITLE_PRINCIPALS,
+            [
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("ordering", Integer, nullable=False, primary_key=True),
+                Column("nconst", String(_NCONST_LENGTH)),
+                Column("category", String(_CATEGORY_LENGTH)),
+                Column("job", String(_JOB_LENGTH)),
+                Column("characters", String),
+            ],
+        ),
+        (
+            ImdbDataset.TITLE_RATINGS,
+            [
+                Column("tconst", String, nullable=False, primary_key=True),
+                Column("averageRating", Float, nullable=False),
+                Column("numVotes", Integer, nullable=False),
+            ],
+        ),
+    ]
 
 
 def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[ReportTable, List[Column]]:
@@ -122,96 +138,101 @@ def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[Report
     )
 
 
-_REPORT_TABLE_INFOS = [
-    _key_table_info(ReportTable.ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
-    _key_table_info(ReportTable.CATEGORY, _CATEGORY_LENGTH),
-    _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
-    _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
-    _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
-    _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
-    (
-        ReportTable.NAME,
-        [
-            Column("id", Integer, nullable=False, primary_key=True),
-            Column("nconst", String(_NCONST_LENGTH), nullable=False, unique=True),
-            Column("primary_name", String(_TITLE_LENGTH), nullable=False),
-            Column("birth_year", Integer),
-            Column("death_year", Integer),
-            Index("index__name__nconst", "nconst", unique=True),
-        ],
-    ),
-    (
-        ReportTable.NAME_TO_KNOWN_FOR_TITLE,
-        [
-            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-            Column("ordering", Integer, nullable=False),
-            Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-            UniqueConstraint("name_id", "ordering"),
-            Index("index__name_to_known_for_title__name_id", "name_id"),
-            Index("index__name_to_known_for_title__title_id", "title_id"),
-        ],
-    ),
-    (
-        ReportTable.NAME_TO_PROFESSION,
-        [
-            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-            Column("profession_id", Integer, ForeignKey("profession.id"), nullable=False),
-            UniqueConstraint("name_id", "profession_id"),
-            Index("index__name_to_profession__name_id", "name_id"),
-            Index("index__name_to_profession__profession_id", "profession_id"),
-        ],
-    ),
-    (
-        ReportTable.TITLE,
-        [
-            Column("id", Integer, nullable=False, primary_key=True),
-            Column("tconst", String(_TCONST_LENGTH), nullable=False, unique=True),
-            Column("title_type_id", Integer, ForeignKey("title_type.id"), nullable=False),
-            Column("primary_title", String(_TITLE_LENGTH), nullable=False),
-            Column("original_title", String(_TITLE_LENGTH), nullable=False),
-            Column("is_adult", Boolean, nullable=False),
-            Column("start_year", Integer),
-            Column("end_year", Integer),
-            Column("runtime_minutes", Integer),
-            Column("average_rating", Float, default=0.0, nullable=False),
-            Column("rating_count", Integer, default=0, nullable=False),
-            Index("index__title__tconst", "tconst", unique=True),
-        ],
-    ),
-    (
-        ReportTable.TITLE_TO_DIRECTOR,
-        [
-            Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-            Column("ordering", Integer, nullable=False),
-            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-            Index("index__title_to_director__title_id", "title_id", "ordering", unique=True),
-            Index("index__title_to_director__name_id", "name_id"),
-        ],
-    ),
-    (
-        ReportTable.TITLE_TO_PRINCIPAL,
-        [
-            Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-            Column("ordering", Integer, nullable=False),
-            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-            Column("category_id", Integer, ForeignKey("category.id"), nullable=False),
-            Column("job", String(_JOB_LENGTH), nullable=False),
-            Index(
-                "index__title_to_principal__title_id__name_id__ordering", "title_id", "name_id", "ordering", unique=True
-            ),
-        ],
-    ),
-    (
-        ReportTable.TITLE_TO_WRITER,
-        [
-            Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-            Column("ordering", Integer, nullable=False),
-            Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-            Index("index__title_to_writer__title_id", "title_id", "ordering", unique=True),
-            Index("index__title_to_writer__name_id", "name_id"),
-        ],
-    ),
-]
+def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
+    return [
+        _key_table_info(ReportTable.ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
+        _key_table_info(ReportTable.CATEGORY, _CATEGORY_LENGTH),
+        _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
+        _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
+        _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
+        _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
+        (
+            ReportTable.NAME,
+            [
+                Column("id", Integer, nullable=False, primary_key=True),
+                Column("nconst", String(_NCONST_LENGTH), nullable=False, unique=True),
+                Column("primary_name", String(_TITLE_LENGTH), nullable=False),
+                Column("birth_year", Integer),
+                Column("death_year", Integer),
+                Index("index__name__nconst", "nconst", unique=True),
+            ],
+        ),
+        (
+            ReportTable.NAME_TO_KNOWN_FOR_TITLE,
+            [
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
+                UniqueConstraint("name_id", "ordering"),
+                Index("index__name_to_known_for_title__name_id", "name_id"),
+                Index("index__name_to_known_for_title__title_id", "title_id"),
+            ],
+        ),
+        (
+            ReportTable.NAME_TO_PROFESSION,
+            [
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Column("profession_id", Integer, ForeignKey("profession.id"), nullable=False),
+                UniqueConstraint("name_id", "profession_id"),
+                Index("index__name_to_profession__name_id", "name_id"),
+                Index("index__name_to_profession__profession_id", "profession_id"),
+            ],
+        ),
+        (
+            ReportTable.TITLE,
+            [
+                Column("id", Integer, nullable=False, primary_key=True),
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, unique=True),
+                Column("title_type_id", Integer, ForeignKey("title_type.id"), nullable=False),
+                Column("primary_title", String(_TITLE_LENGTH), nullable=False),
+                Column("original_title", String(_TITLE_LENGTH), nullable=False),
+                Column("is_adult", Boolean, nullable=False),
+                Column("start_year", Integer),
+                Column("end_year", Integer),
+                Column("runtime_minutes", Integer),
+                Column("average_rating", Float, default=0.0, nullable=False),
+                Column("rating_count", Integer, default=0, nullable=False),
+                Index("index__title__tconst", "tconst", unique=True),
+            ],
+        ),
+        (
+            ReportTable.TITLE_TO_DIRECTOR,
+            [
+                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Index("index__title_to_director__title_id", "title_id", "ordering", unique=True),
+                Index("index__title_to_director__name_id", "name_id"),
+            ],
+        ),
+        (
+            ReportTable.TITLE_TO_PRINCIPAL,
+            [
+                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Column("category_id", Integer, ForeignKey("category.id"), nullable=False),
+                Column("job", String(_JOB_LENGTH), nullable=False),
+                Index(
+                    "index__title_to_principal__title_id__name_id__ordering",
+                    "title_id",
+                    "name_id",
+                    "ordering",
+                    unique=True,
+                ),
+            ],
+        ),
+        (
+            ReportTable.TITLE_TO_WRITER,
+            [
+                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Index("index__title_to_writer__title_id", "title_id", "ordering", unique=True),
+                Index("index__title_to_writer__name_id", "name_id"),
+            ],
+        ),
+    ]
 
 
 def typed_column_to_value_map(
@@ -253,16 +274,18 @@ def typed_column_to_value_map(
 
 
 class Database:
-    def __init__(self, engine_info: str):
+    def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE):
         # FIXME: Remove possible username and password from logged engine info.
         log.info("connecting to database %s", engine_info)
         self._engine = create_engine(engine_info)
+        self._bulk_size = bulk_size
         self._metadata = MetaData(self._engine)
         self._imdb_dataset_to_table_map = None
         self._report_name_to_table_map = {}
         self._nconst_to_name_id_map = None
         self._tconst_to_title_id_map = None
         self._unknown_type_id = None
+        self._data_to_insert = None
 
     @property
     def engine(self) -> Engine:
@@ -310,19 +333,55 @@ class Database:
     def create_imdb_dataset_tables(self):
         log.info("creating imdb dataset tables")
         self._imdb_dataset_to_table_map = {
-            table_info[0]: self._create_imdb_dataset_table(table_info[0], table_info[1:])
-            for table_info in IMDB_DATSET_TABLE_INFO
+            table_name: Table(table_name.value, self.metadata, *columns)
+            for table_name, columns in imdb_dataset_table_infos()
         }
         self.metadata.create_all()
 
-    def _create_imdb_dataset_table(self, imdb_dataset: ImdbDataset, columns: List[Column]) -> Table:
-        table_name = imdb_dataset.table_name
-        result = Table(table_name, self.metadata, *columns)
-        return result
+    def build_all_dataset_tables(
+        self, connection: Connection, dataset_folder: str, log_progress: Optional[Callable[[int, int], None]] = None
+    ):
+        for imdb_dataset_name in IMDB_DATASET_NAMES:
+            self.build_dataset_table(connection, imdb_dataset_name, dataset_folder, log_progress)
+
+    def build_dataset_table(
+        self,
+        connection: Connection,
+        imdb_dataset_name: str,
+        dataset_folder: str,
+        log_progress: Optional[Callable[[int, int], None]] = None,
+    ):
+        imdb_dataset = ImdbDataset(imdb_dataset_name)
+        table_to_modify = self.imdb_dataset_to_table_map[imdb_dataset]
+        # Clear the entire table.
+        delete_statement = table_to_modify.delete().execution_options(autocommit=True)
+        connection.execute(delete_statement)
+        # Insert all rows from TSV.
+        key_columns = self.key_columns(imdb_dataset)
+        gzipped_tsv_path = os.path.join(dataset_folder, imdb_dataset.filename)
+        gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
+        self._data_to_insert = []
+        for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
+            try:
+                self._data_to_insert.append(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
+            except PimdbError as error:
+                raise PimdbError(f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}")
+            self._checked_insert(connection, table_to_modify, False)
+        self._checked_insert(connection, table_to_modify, True)
+
+    def _checked_insert(self, connection, table, force: bool):
+        data_count = len(self._data_to_insert)
+        if (force and data_count >= 1) or (data_count >= self._bulk_size):
+            with connection.begin() as transaction:
+                connection.execute(table.insert(), self._data_to_insert)
+                transaction.commit()
+                self._data_to_insert.clear()
+        if force:
+            self._data_to_insert = None
 
     def create_report_tables(self):
         log.info("creating report tables")
-        for report_table, options in _REPORT_TABLE_INFOS:
+        for report_table, options in report_table_infos():
             try:
                 self._report_name_to_table_map[report_table] = Table(report_table.value, self.metadata, *options)
             except SQLAlchemyError as error:
@@ -435,7 +494,7 @@ class Database:
         )
         with connection.begin():
             tconst_to_title_id_map = self.tconst_to_title_id_map(connection)
-            name_basics_table.delete()
+            connection.execute(name_to_known_for_title_table.delete())
             for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
                 ordering = 0
                 for tconst in known_for_titles_tconsts.split(","):
