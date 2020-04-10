@@ -653,8 +653,8 @@ class Database:
         self._build_title_to_crew_table(connection, "directors", title_to_director_table)
 
     def build_title_to_writer_table(self, connection: Connection) -> None:
-        title_to_director_table = self.report_table_for(ReportTable.TITLE_TO_WRITER)
-        self._build_title_to_crew_table(connection, "writers", title_to_director_table)
+        title_to_writer_table = self.report_table_for(ReportTable.TITLE_TO_WRITER)
+        self._build_title_to_crew_table(connection, "writers", title_to_writer_table)
 
     def _build_title_to_crew_table(
         self, connection: Connection, column_with_nconsts_name: str, target_table: Table
@@ -679,7 +679,10 @@ class Database:
                     director_name_id = nconst_to_name_id_map.get(director_nconst)
                     if director_name_id is not None:
                         ordering += 1
-                        target_table.insert({"name_id": director_name_id, "ordering": ordering, "title_id": title_id})
+                        insert_target_table = target_table.insert(
+                            {"name_id": director_name_id, "ordering": ordering, "title_id": title_id}
+                        )
+                        connection.execute(insert_target_table)
                     else:
                         log.warning(
                             'ignored unknown %s.%s "%s" for title "%s"',
