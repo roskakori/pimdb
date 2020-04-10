@@ -75,6 +75,18 @@ def _parser() -> argparse.ArgumentParser:
             help=f"name(s) of IMDb datasets to {action}; valid names: {', '.join(_VALID_NAMES)}; default: %(default)s",
         )
 
+    def add_drop(parser_to_extend: argparse.ArgumentParser):
+        parser_to_extend.add_argument(
+            "--drop",
+            "-D",
+            action="store_true",
+            help=(
+                ""
+                "drop target tables instead of just deleting all data; "
+                "this is useful after an upgrade where the data model has changed"
+            ),
+        )
+
     result.add_argument(
         "--log",
         choices=_VALID_LOG_LEVELS,
@@ -91,6 +103,7 @@ def _parser() -> argparse.ArgumentParser:
     download_parser = subparsers.add_parser(CommandName.DOWNLOAD.value, help="download IMDb datasets")
     add_dataset_folder(download_parser)
     add_dataset_names(download_parser, "download")
+    download_parser.add_argument("--force", "-F", action="store_true")
 
     transfer_parser = subparsers.add_parser(
         CommandName.TRANSFER.value, help="transfer downloaded IMDb dataset files into SQL tables"
@@ -99,10 +112,12 @@ def _parser() -> argparse.ArgumentParser:
     add_database(transfer_parser)
     add_dataset_folder(transfer_parser)
     add_dataset_names(transfer_parser, "transfer")
+    add_drop(transfer_parser)
 
     build_parser = subparsers.add_parser(CommandName.BUILD.value, help="build sanitized tables for reporting")
     add_bulk_size(build_parser)
     add_database(build_parser)
+    add_drop(build_parser)
 
     return result
 
@@ -111,11 +126,12 @@ class _DownloadCommand:
     def __init__(self, parser: argparse.ArgumentParser, args: argparse.Namespace):
         self._imdb_datasets = _checked_imdb_dataset_names(parser, args)
         self._dataset_folder = args.dataset_folder
+        self._only_if_newer = not args.force
 
     def run(self):
         for dataset_name_to_download in self._imdb_datasets:
             target_path = os.path.join(self._dataset_folder, ImdbDataset(dataset_name_to_download).filename)
-            download_imdb_dataset(ImdbDataset(dataset_name_to_download), target_path)
+            download_imdb_dataset(ImdbDataset(dataset_name_to_download), target_path, self._only_if_newer)
 
 
 def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.Namespace) -> List[str]:
@@ -132,7 +148,7 @@ def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.
 class _TransferCommand:
     def __init__(self, parser: argparse.ArgumentParser, args: argparse.Namespace):
         self._imdb_datasets = _checked_imdb_dataset_names(parser, args)
-        self._database = Database(args.database, args.bulk_size)
+        self._database = Database(args.database, args.bulk_size, args.drop)
         self._database.create_imdb_dataset_tables()
         self._dataset_folder = args.dataset_folder
 
@@ -150,7 +166,7 @@ class _TransferCommand:
 
 class _BuildCommand:
     def __init__(self, _parser: argparse.ArgumentParser, args: argparse.Namespace):
-        self._database = Database(args.database, args.bulk_size)
+        self._database = Database(args.database, args.bulk_size, args.drop)
         self._connection: Optional[Connection] = None
 
     def run(self):
@@ -158,11 +174,12 @@ class _BuildCommand:
         self._database.create_report_tables()
         with self._database.connection() as self._connection:
             self._database.build_profession_table(self._connection)
-            self._database.build_alias_type_table(self._connection)
+            self._database.build_title_alias_type_table(self._connection)
             self._database.build_genre_table(self._connection)
             self._database.build_title_type_table(self._connection)
             self._database.build_name_table(self._connection)
             self._database.build_title_table(self._connection)
+            self._database.build_participation_and_character_tables(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_director_table(self._connection)
             self._database.build_title_to_writer_table(self._connection)

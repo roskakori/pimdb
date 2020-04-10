@@ -54,26 +54,28 @@ class ImdbDataset(Enum):
         Name for use in SQL tables, for example:
 
         >>> ImdbDataset("name.basics").table_name
-        'name_basics'
+        'NameBasics'
         """
-        return f"{self.value}".replace(".", "_")
+        return camelized_dot_name(self.value)
 
 
 class ReportTable(Enum):
-    ALIAS_TYPE = "alias_type"
-    CATEGORY = "category"
     CHARACTER = "character"
     GENRE = "genre"
     NAME = "name"
     NAME_TO_KNOWN_FOR_TITLE = "name_to_known_for_title"
     NAME_TO_PROFESSION = "name_to_profession"
-    PRINCIPAL_TO_CHARACTER = "principal_to_character"
+    PARTICIPATION = "participation"
+    PARTICIPATION_CATEGORY = "participation_category"
+    PARTICIPATION_TO_CHARACTER = "participation_to_character"
     PROFESSION = "profession"
     TITLE = "title"
+    TITLE_ALIAS = "title_alias"
+    TITLE_ALIAS_TYPE = "title_alias_type"
+    TITLE_TO_GENRE = "title_to_genre"
     TITLE_TO_DIRECTOR = "title_to_director"
     TITLE_TO_WRITER = "title_to_writer"
-    TITLE_TO_PRINCIPAL = "title_to_principal"
-    TITLE_TO_TYPE = "title_to_title_type"
+    TITLE_TO_TITLE_TYPE = "title_to_title_type"
     TITLE_TYPE = "title_type"
 
 
@@ -277,3 +279,18 @@ class TsvDictWriter:
                 self.line_number,
                 f"cannot write TSV row: {error}; name_to_value_map={name_to_value_map}",
             ) from error
+
+
+def camelized_dot_name(name: str) -> str:
+    assert name == name.lower()
+    result = ""
+    change_to_upper = True
+    for char in name:
+        if char == ".":
+            change_to_upper = True
+        else:
+            if change_to_upper:
+                char = char.upper()
+                change_to_upper = False
+            result += char
+    return result

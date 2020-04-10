@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable
 
@@ -11,7 +12,6 @@ from sqlalchemy import (
     Table,
     create_engine,
     ForeignKey,
-    UniqueConstraint,
     Index,
 )
 from sqlalchemy.engine import Engine, Connection
@@ -39,6 +39,7 @@ _CREW_COUNT = 2048  # current maximum: 1180
 _CATEGORY_LENGTH = 32  # current maximum: 19
 _JOB_LENGTH = 512  # current maximum: 286
 _CHARACTER_LENGTH = 512  # TODO: limit to reasonable maximum
+_CHARACTERS_LENGTH = 1024  # current maximum: 463
 
 #: The "title_akas.types" field is a mess.
 _ALIAS_TYPES_LENGTH = 64
@@ -112,7 +113,7 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
                 Column("nconst", String(_NCONST_LENGTH)),
                 Column("category", String(_CATEGORY_LENGTH)),
                 Column("job", String(_JOB_LENGTH)),
-                Column("characters", String),
+                Column("characters", String(_CHARACTERS_LENGTH)),
             ],
         ),
         (
@@ -138,14 +139,45 @@ def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[Report
     )
 
 
+def _ordered_relation_table_info(
+    table_to_create: ReportTable, from_table: ReportTable, to_table: ReportTable
+) -> Tuple[ReportTable, List[Column]]:
+    """
+    Information required to create a table representing an ordered relation
+    pointing from ``from_table`` to ``to_table``, including the necessary
+    indexes and constraints.
+    """
+    assert isinstance(table_to_create, ReportTable)
+    assert isinstance(from_table, ReportTable)
+    assert isinstance(to_table, ReportTable)
+    report_table_name = table_to_create.value
+    from_table_name = from_table.value
+    to_table_name = to_table.value
+    return (
+        table_to_create,
+        [
+            Column(f"{from_table_name}_id", Integer, ForeignKey(f"{from_table_name}.id"), nullable=False),
+            Column("ordering", Integer, nullable=False),
+            Column(f"{to_table_name}_id", Integer, ForeignKey(f"{to_table_name}.id"), nullable=False),
+            Index(
+                f"index__{report_table_name}__{from_table_name}_id__ordering",
+                f"{from_table_name}_id",
+                "ordering",
+                unique=True,
+            ),
+            Index(f"index__{report_table_name}__{to_table_name}_id", f"{to_table_name}_id"),
+        ],
+    )
+
+
 def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
     return [
-        _key_table_info(ReportTable.ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
-        _key_table_info(ReportTable.CATEGORY, _CATEGORY_LENGTH),
         _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
+        _key_table_info(ReportTable.PARTICIPATION_CATEGORY, _CATEGORY_LENGTH),
         _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
         _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
+        _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         (
             ReportTable.NAME,
             [
@@ -157,26 +189,23 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
                 Index("index__name__nconst", "nconst", unique=True),
             ],
         ),
+        _ordered_relation_table_info(ReportTable.NAME_TO_KNOWN_FOR_TITLE, ReportTable.NAME, ReportTable.TITLE),
+        _ordered_relation_table_info(ReportTable.NAME_TO_PROFESSION, ReportTable.NAME, ReportTable.PROFESSION),
         (
-            ReportTable.NAME_TO_KNOWN_FOR_TITLE,
+            ReportTable.PARTICIPATION,
             [
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Column("ordering", Integer, nullable=False),
+                Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-                UniqueConstraint("name_id", "ordering"),
-                Index("index__name_to_known_for_title__name_id", "name_id"),
-                Index("index__name_to_known_for_title__title_id", "title_id"),
+                Column("ordering", Integer, nullable=False),
+                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Column("participation_category_id", Integer, ForeignKey("participation_category.id")),
+                Column("job", String(_JOB_LENGTH)),
+                Index("index__participation__title_id__ordering", "title_id", "ordering", unique=True),
+                Index("index__participation__name_id", "name_id"),
             ],
         ),
-        (
-            ReportTable.NAME_TO_PROFESSION,
-            [
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Column("profession_id", Integer, ForeignKey("profession.id"), nullable=False),
-                UniqueConstraint("name_id", "profession_id"),
-                Index("index__name_to_profession__name_id", "name_id"),
-                Index("index__name_to_profession__profession_id", "profession_id"),
-            ],
+        _ordered_relation_table_info(
+            ReportTable.PARTICIPATION_TO_CHARACTER, ReportTable.PARTICIPATION, ReportTable.CHARACTER
         ),
         (
             ReportTable.TITLE,
@@ -196,42 +225,25 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
             ],
         ),
         (
-            ReportTable.TITLE_TO_DIRECTOR,
+            ReportTable.TITLE_ALIAS,
             [
+                Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("ordering", Integer, nullable=False),
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Index("index__title_to_director__title_id", "title_id", "ordering", unique=True),
-                Index("index__title_to_director__name_id", "name_id"),
+                Column("title", String(_TITLE_LENGTH), nullable=False),
+                Column("region", String(_REGION_LENGTH)),
+                Column("language", String(_LANGUAGE_LENGTH)),
+                Column("title_alias_type_id", Integer, ForeignKey("title_alias_type.id")),
+                Column("original_title", String(_TITLE_LENGTH), nullable=False),
+                # NOTE: is_original_title sometimes actually is null.
+                Column("is_original_title", Boolean, nullable=False),
+                Index("index__title_alias__title_id__ordering", "title_id", "ordering", unique=True),
             ],
         ),
-        (
-            ReportTable.TITLE_TO_PRINCIPAL,
-            [
-                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-                Column("ordering", Integer, nullable=False),
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Column("category_id", Integer, ForeignKey("category.id"), nullable=False),
-                Column("job", String(_JOB_LENGTH), nullable=False),
-                Index(
-                    "index__title_to_principal__title_id__name_id__ordering",
-                    "title_id",
-                    "name_id",
-                    "ordering",
-                    unique=True,
-                ),
-            ],
-        ),
-        (
-            ReportTable.TITLE_TO_WRITER,
-            [
-                Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
-                Column("ordering", Integer, nullable=False),
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Index("index__title_to_writer__title_id", "title_id", "ordering", unique=True),
-                Index("index__title_to_writer__name_id", "name_id"),
-            ],
-        ),
+        _ordered_relation_table_info(ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME),
+        _ordered_relation_table_info(ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
+        _ordered_relation_table_info(ReportTable.TITLE_TO_TITLE_TYPE, ReportTable.TITLE, ReportTable.TITLE_TYPE),
+        _ordered_relation_table_info(ReportTable.TITLE_TO_WRITER, ReportTable.TITLE, ReportTable.NAME),
     ]
 
 
@@ -274,11 +286,12 @@ def typed_column_to_value_map(
 
 
 class Database:
-    def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE):
+    def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE, has_to_drop_tables: bool = False):
         # FIXME: Remove possible username and password from logged engine info.
         log.info("connecting to database %s", engine_info)
         self._engine = create_engine(engine_info)
         self._bulk_size = bulk_size
+        self._has_to_drop_tables = has_to_drop_tables
         self._metadata = MetaData(self._engine)
         self._imdb_dataset_to_table_map = None
         self._report_name_to_table_map = {}
@@ -302,7 +315,7 @@ class Database:
 
     @property
     def unknown_type_id(self) -> int:
-        assert self._unknown_type_id is not None, f"{self.build_alias_type_table.__name__}() must be called first"
+        assert self._unknown_type_id is not None, f"{self.build_title_alias_type_table.__name__}() must be called first"
         return self._unknown_type_id
 
     def report_table_for(self, report_table_key: ReportTable) -> Table:
@@ -333,9 +346,11 @@ class Database:
     def create_imdb_dataset_tables(self):
         log.info("creating imdb dataset tables")
         self._imdb_dataset_to_table_map = {
-            table_name: Table(table_name.value, self.metadata, *columns)
+            table_name: Table(table_name.table_name, self.metadata, *columns)
             for table_name, columns in imdb_dataset_table_infos()
         }
+        if self._has_to_drop_tables:
+            self.metadata.drop_all()
         self.metadata.create_all()
 
     def build_all_dataset_tables(
@@ -386,6 +401,8 @@ class Database:
                 self._report_name_to_table_map[report_table] = Table(report_table.value, self.metadata, *options)
             except SQLAlchemyError as error:
                 raise PimdbError(f'cannot create report table "{report_table.value}": {error}') from error
+        if self._has_to_drop_tables:
+            self.metadata.drop_all()
         self.metadata.create_all()
 
     def key_columns(self, imdb_dataset: ImdbDataset) -> Tuple:
@@ -424,10 +441,10 @@ class Database:
                 connection.execute(table_to_build.insert(), name=value)
         return table_to_build
 
-    def build_alias_type_table(self, connection: Connection) -> None:
+    def build_title_alias_type_table(self, connection: Connection) -> None:
         with connection.begin():
-            self.build_key_table_from_values(connection, ReportTable.ALIAS_TYPE, IMDB_ALIAS_TYPES)
-            alias_type_table = self.report_table_for(ReportTable.ALIAS_TYPE)
+            self.build_key_table_from_values(connection, ReportTable.TITLE_ALIAS_TYPE, IMDB_ALIAS_TYPES)
+            alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TYPE)
             connection.execute(alias_type_table.insert({"name": "unknown"}))
         (self._unknown_type_id,) = connection.execute(
             select([alias_type_table.c.id]).where(alias_type_table.c.name == "unknown")
@@ -456,6 +473,72 @@ class Database:
             select([primary_profession_column]).where(primary_profession_column.isnot(None)).distinct(),
             ",",
         )
+
+    def build_participation_and_character_tables(self, connection: Connection):
+        character_table = self.report_table_for(ReportTable.CHARACTER)
+        name_table = self.report_table_for(ReportTable.NAME)
+        title_table = self.report_table_for(ReportTable.TITLE)
+        participation_table = self.report_table_for(ReportTable.PARTICIPATION)
+        participation_to_character_table = self.report_table_for(ReportTable.PARTICIPATION_TO_CHARACTER)
+        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+
+        character_count = 0
+        character_name_to_id_map: Dict[str, int] = {}
+        participation_id = 0
+
+        characters_column = title_principals_table.c.characters
+        select_participation_data = select(
+            [
+                title_table.c.id,
+                title_principals_table.c.ordering,
+                name_table.c.id,
+                title_principals_table.c.job,
+                characters_column,
+            ]
+        ).select_from(
+            title_principals_table.join(name_table, name_table.c.nconst == title_principals_table.c.nconst).join(
+                title_table, title_table.c.tconst == title_principals_table.c.tconst
+            )
+        )
+        with connection.begin():
+            connection.execute(character_table.delete())
+            connection.execute(participation_table.delete())
+            connection.execute(participation_to_character_table.delete())
+            for title_id, ordering, name_id, job, characters_json in connection.execute(select_participation_data):
+                participation_id += 1
+                insert_participation = participation_table.insert(
+                    {
+                        "id": participation_id,
+                        "title_id": title_id,
+                        "ordering": ordering,
+                        "name_id": name_id,
+                        "job": job,
+                    }
+                )
+                connection.execute(insert_participation)
+                participation_ordering = 0
+                if characters_json is not None:
+                    character_names = json.loads(characters_json)
+                    for character_name in character_names:
+                        character_id = character_name_to_id_map.get(character_name)
+                        if character_id is None:
+                            character_count += 1
+                            character_id = character_count
+                            character_name_to_id_map[character_name] = character_id
+                            # NOTE: We need to insert the new character ID immediately and cannot to a bulk
+                            #  insert because it needs to be available for the following inserts.
+                            insert_character = character_table.insert({"id": character_id, "name": character_name})
+                            connection.execute(insert_character)
+                    participation_ordering += 1
+                    insert_participation_to_character = participation_to_character_table.insert(
+                        {
+                            "participation_id": participation_id,
+                            "ordering": participation_ordering,
+                            "character_id": character_id,
+                        }
+                    )
+                    connection.execute(insert_participation_to_character)
+        log.info("  added %d participations and %d characters", participation_id, character_count)
 
     @staticmethod
     def _log_building_table(table: Table) -> None:

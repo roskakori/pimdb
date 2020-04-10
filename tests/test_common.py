@@ -1,6 +1,6 @@
 import gzip
 
-from pimdb.common import TsvDictWriter, GzippedTsvReader
+from pimdb.common import camelized_dot_name, TsvDictWriter, GzippedTsvReader
 
 from tests._common import output_path
 
@@ -18,3 +18,8 @@ def test_can_write_and_read_gzipped_tsv():
     rows_read = list(gzipped_tsv_reader.column_names_to_value_maps())
 
     assert rows_to_write == rows_read
+
+
+def test_can_camelize_dot_name():
+    assert camelized_dot_name("some") == "Some"
+    assert camelized_dot_name("some.thing") == "SomeThing"
