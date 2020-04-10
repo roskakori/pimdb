@@ -15,8 +15,8 @@ from sqlalchemy import (
     Index,
 )
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.sql import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import coalesce
 from sqlalchemy.sql.selectable import SelectBase
 
@@ -31,12 +31,11 @@ _TITLE_LENGTH = 512  # current maximum: 408
 _NAME_LENGTH = 160  # current maximum: 105
 _GENRE_LENGTH = 16
 _GENRE_COUNT = 4
-_PROFESSION_LENGTH = 32
-_PROFESSION_COUNT = 3
 _REGION_LENGTH = 4
 _LANGUAGE_LENGTH = 4
 _CREW_COUNT = 2048  # current maximum: 1180
-_CATEGORY_LENGTH = 32  # current maximum: 19
+_PROFESSION_LENGTH = 32  # current maximum (from title.principals.category): 19
+_PROFESSION_COUNT = 3
 _JOB_LENGTH = 512  # current maximum: 286
 _CHARACTER_LENGTH = 512  # TODO: limit to reasonable maximum
 _CHARACTERS_LENGTH = 1024  # current maximum: 463
@@ -111,7 +110,7 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("ordering", Integer, nullable=False, primary_key=True),
                 Column("nconst", String(_NCONST_LENGTH)),
-                Column("category", String(_CATEGORY_LENGTH)),
+                Column("category", String(_PROFESSION_LENGTH)),
                 Column("job", String(_JOB_LENGTH)),
                 Column("characters", String(_CHARACTERS_LENGTH)),
             ],
@@ -174,7 +173,6 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
     return [
         _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
-        _key_table_info(ReportTable.PARTICIPATION_CATEGORY, _CATEGORY_LENGTH),
         _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
         _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
         _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
@@ -186,11 +184,11 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
                 Column("primary_name", String(_TITLE_LENGTH), nullable=False),
                 Column("birth_year", Integer),
                 Column("death_year", Integer),
+                Column("primary_professions", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
                 Index("index__name__nconst", "nconst", unique=True),
             ],
         ),
         _ordered_relation_table_info(ReportTable.NAME_TO_KNOWN_FOR_TITLE, ReportTable.NAME, ReportTable.TITLE),
-        _ordered_relation_table_info(ReportTable.NAME_TO_PROFESSION, ReportTable.NAME, ReportTable.PROFESSION),
         (
             ReportTable.PARTICIPATION,
             [
@@ -198,7 +196,7 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("ordering", Integer, nullable=False),
                 Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
-                Column("participation_category_id", Integer, ForeignKey("participation_category.id")),
+                Column("profession_id", Integer, ForeignKey("profession.id")),
                 Column("job", String(_JOB_LENGTH)),
                 Index("index__participation__title_id__ordering", "title_id", "ordering", unique=True),
                 Index("index__participation__name_id", "name_id"),
@@ -343,6 +341,16 @@ class Database:
             self._tconst_to_title_id_map = {tconst: title_id for title_id, tconst in connection.execute(title_select)}
         return self._tconst_to_title_id_map
 
+    def _natural_key_to_id_map(
+        self, connection: Connection, report_table: ReportTable, natural_key_column: str = "name", id_column: str = "id"
+    ) -> Dict[str, int]:
+        table = self.report_table_for(report_table)
+        log.info("building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
+        name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
+        result = {name: id_ for name, id_ in connection.execute(name_id_select)}
+        log.info("  found %d entried", len(result))
+        return result
+
     def create_imdb_dataset_tables(self):
         log.info("creating imdb dataset tables")
         self._imdb_dataset_to_table_map = {
@@ -435,19 +443,22 @@ class Database:
     def _build_key_table_from_values(
         self, connection: Connection, table_to_build: Table, values: Sequence[str]
     ) -> Table:
+        value_count = 0
         with connection.begin():
             connection.execute(table_to_build.delete())
             for value in sorted(values):
                 connection.execute(table_to_build.insert(), name=value)
+                value_count += 1
+        log.info("  %d entries found", value_count)
         return table_to_build
 
     def build_title_alias_type_table(self, connection: Connection) -> None:
         with connection.begin():
             self.build_key_table_from_values(connection, ReportTable.TITLE_ALIAS_TYPE, IMDB_ALIAS_TYPES)
-            alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TYPE)
-            connection.execute(alias_type_table.insert({"name": "unknown"}))
+            title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TYPE)
+            connection.execute(title_alias_type_table.insert({"name": "unknown"}))
         (self._unknown_type_id,) = connection.execute(
-            select([alias_type_table.c.id]).where(alias_type_table.c.name == "unknown")
+            select([title_alias_type_table.c.id]).where(title_alias_type_table.c.name == "unknown")
         ).fetchone()
         assert self.unknown_type_id is not None
 
@@ -461,30 +472,35 @@ class Database:
         title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
         genres_column = title_basics_table.c.genres
         self.build_key_table_from_query(
-            connection, ReportTable.GENRE, select([genres_column]).where(genres_column.isnot(None)).distinct()
+            connection, ReportTable.GENRE, select([genres_column]).where(genres_column.isnot(None)).distinct(), ","
         )
 
     def build_profession_table(self, connection: Connection):
-        name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
-        primary_profession_column = name_basics_table.c.primaryProfession
+        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+        category_column = title_principals_table.c.category
         self.build_key_table_from_query(
-            connection,
-            ReportTable.PROFESSION,
-            select([primary_profession_column]).where(primary_profession_column.isnot(None)).distinct(),
-            ",",
+            connection, ReportTable.PROFESSION, select([category_column]).distinct(),
         )
 
     def build_participation_and_character_tables(self, connection: Connection):
         character_table = self.report_table_for(ReportTable.CHARACTER)
-        name_table = self.report_table_for(ReportTable.NAME)
-        title_table = self.report_table_for(ReportTable.TITLE)
         participation_table = self.report_table_for(ReportTable.PARTICIPATION)
         participation_to_character_table = self.report_table_for(ReportTable.PARTICIPATION_TO_CHARACTER)
+        log.info(
+            "building %s, %s and %s table",
+            character_table.name,
+            participation_table.name,
+            participation_to_character_table.name,
+        )
+        name_table = self.report_table_for(ReportTable.NAME)
+        title_table = self.report_table_for(ReportTable.TITLE)
         title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
 
         character_count = 0
         character_name_to_id_map: Dict[str, int] = {}
         participation_id = 0
+
+        profession_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.PROFESSION)
 
         characters_column = title_principals_table.c.characters
         select_participation_data = select(
@@ -492,6 +508,7 @@ class Database:
                 title_table.c.id,
                 title_principals_table.c.ordering,
                 name_table.c.id,
+                title_principals_table.c.category,
                 title_principals_table.c.job,
                 characters_column,
             ]
@@ -504,14 +521,18 @@ class Database:
             connection.execute(character_table.delete())
             connection.execute(participation_table.delete())
             connection.execute(participation_to_character_table.delete())
-            for title_id, ordering, name_id, job, characters_json in connection.execute(select_participation_data):
+            for title_id, ordering, name_id, category, job, characters_json in connection.execute(
+                select_participation_data
+            ):
                 participation_id += 1
+                profession_id = profession_name_to_id_map[category]
                 insert_participation = participation_table.insert(
                     {
                         "id": participation_id,
                         "title_id": title_id,
                         "ordering": ordering,
                         "name_id": name_id,
+                        "profession_id": profession_id,
                         "job": job,
                     }
                 )
@@ -552,13 +573,20 @@ class Database:
             delete_statement = name_table.delete().execution_options(autocommit=True)
             connection.execute(delete_statement)
             insert_statement = name_table.insert().from_select(
-                [name_table.c.nconst, name_table.c.primary_name, name_table.c.birth_year, name_table.c.death_year],
+                [
+                    name_table.c.nconst,
+                    name_table.c.primary_name,
+                    name_table.c.birth_year,
+                    name_table.c.death_year,
+                    name_table.c.primary_professions,
+                ],
                 select(
                     [
                         name_basics_table.c.nconst,
                         name_basics_table.c.primaryName,
                         name_basics_table.c.birthYear,
                         name_basics_table.c.deathYear,
+                        name_basics_table.c.primaryProfession,
                     ]
                 ),
             )
@@ -598,16 +626,10 @@ class Database:
                             nconst,
                         )
 
-    def build_name_to_profession_table(self, connection: Connection) -> None:
-        log.info("building name_to_profession table")
-        # name_table = self.report_table_for("name")
-        # profession_table = self.report_table_for("profession")
-        # TODO
-
     def build_title_table(self, connection: Connection) -> None:
-        log.info("building title table")
-        unknown_type_id = self.unknown_type_id
         title_table = self.report_table_for(ReportTable.TITLE)
+        Database._log_building_table(title_table)
+        unknown_type_id = self.unknown_type_id
         title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
         title_ratings_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_RATINGS]
         type_table = self.report_table_for(ReportTable.TITLE_TYPE)
@@ -647,6 +669,29 @@ class Database:
                 ),
             )
             connection.execute(insert_statement)
+
+    def build_title_to_genre_table(self, connection: Connection):
+        title_to_genre_table = self.report_table_for(ReportTable.TITLE_TO_GENRE)
+        Database._log_building_table(title_to_genre_table)
+        title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
+        title_table = self.report_table_for(ReportTable.TITLE)
+        genres_column = title_basics_table.c.genres
+        select_genre_data = (
+            select([title_table.c.id, genres_column])
+            .select_from(title_table.join(title_basics_table, title_basics_table.c.tconst == title_table.c.tconst))
+            .where(genres_column.isnot(None))
+        )
+        genre_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.GENRE)
+        with connection.begin():
+            connection.execute(title_to_genre_table.delete())
+            for title_id, genres in connection.execute(select_genre_data):
+                ordering = 0
+                for genre in genres.split(","):
+                    genre_id = genre_name_to_id_map[genre]
+                    ordering += 1
+                    connection.execute(
+                        title_to_genre_table.insert({"genre_id": genre_id, "ordering": ordering, "title_id": title_id})
+                    )
 
     def build_title_to_director_table(self, connection: Connection) -> None:
         title_to_director_table = self.report_table_for(ReportTable.TITLE_TO_DIRECTOR)

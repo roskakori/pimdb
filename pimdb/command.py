@@ -173,14 +173,15 @@ class _BuildCommand:
         self._database.create_imdb_dataset_tables()
         self._database.create_report_tables()
         with self._database.connection() as self._connection:
-            self._database.build_profession_table(self._connection)
             self._database.build_title_alias_type_table(self._connection)
             self._database.build_genre_table(self._connection)
+            self._database.build_profession_table(self._connection)
             self._database.build_title_type_table(self._connection)
             self._database.build_name_table(self._connection)
             self._database.build_title_table(self._connection)
             self._database.build_participation_and_character_tables(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
+            self._database.build_title_to_genre_table(self._connection)
             self._database.build_title_to_director_table(self._connection)
             self._database.build_title_to_writer_table(self._connection)
 

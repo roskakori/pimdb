@@ -64,11 +64,9 @@ class ReportTable(Enum):
     GENRE = "genre"
     NAME = "name"
     NAME_TO_KNOWN_FOR_TITLE = "name_to_known_for_title"
-    NAME_TO_PROFESSION = "name_to_profession"
     PARTICIPATION = "participation"
-    PARTICIPATION_CATEGORY = "participation_category"
     PARTICIPATION_TO_CHARACTER = "participation_to_character"
-    PROFESSION = "profession"
+    PROFESSION = "profession"  # Extracted from title.principal.category
     TITLE = "title"
     TITLE_ALIAS = "title_alias"
     TITLE_ALIAS_TYPE = "title_alias_type"
