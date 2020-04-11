@@ -787,6 +787,7 @@ class Database:
         ).select_from(title_table.join(title_akas_table, title_akas_table.c.titleId == title_table.c.tconst))
         with connection.begin():
             connection.execute(title_alias_table.delete())
+            connection.execute(title_alias_to_title_alias_type_table.delete())
             title_alias_id = 0
             for (
                 title_id,
