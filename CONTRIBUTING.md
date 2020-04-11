@@ -13,7 +13,7 @@ pimdb.
 1. Install the required packages:
    ```bash
    $ pip install --upgrade pip
-   $ pip install -r dev-requirements.txt
+   $ pip install -r requirements.txt
    ```
 1. Activate the pre-commit hook:
    ```bash
