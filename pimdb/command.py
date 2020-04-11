@@ -194,7 +194,19 @@ _COMMAND_NAME_TO_COMMAND_CLASS_MAP = {
 }
 
 
-def main(arguments: Optional[List[str]] = None) -> int:
+def exit_code_for(arguments: Optional[List[str]] = None) -> int:
+    """
+    Exit code for running the command line with the specified ``arguments``,
+    or ``sys.argv``if no arguments are specified.
+
+    Unlike :py:func:`main`, logging has to be initialized before calling this
+    function.
+
+    Some command line options like "--help" and "--version" result in
+    :py:exc:`SystemExit` that is just passed on.
+
+    Unexpected errors are not handled with ``except`` but passed on.
+    """
     result = 1
     command_name = None
     try:
@@ -220,6 +232,10 @@ def main(arguments: Optional[List[str]] = None) -> int:
     return result
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
-    sys.exit(main())
+    sys.exit(exit_code_for())
+
+
+if __name__ == "__main__":
+    main()
