@@ -242,7 +242,6 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
         _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         _ordered_relation_table_info(ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME),
         _ordered_relation_table_info(ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
-        _ordered_relation_table_info(ReportTable.TITLE_TO_TITLE_TYPE, ReportTable.TITLE, ReportTable.TITLE_TYPE),
         _ordered_relation_table_info(ReportTable.TITLE_TO_WRITER, ReportTable.TITLE, ReportTable.NAME),
     ]
 
