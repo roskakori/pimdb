@@ -152,7 +152,7 @@ def download_imdb_dataset(imdb_dataset: ImdbDataset, target_path: str, only_if_n
         if has_to_be_downloaded:
             megabyte_to_download = int(response.headers.get("content-length", "0")) / _MEGABYTE
             length_text = f"{megabyte_to_download:.1f} MB " if megabyte_to_download > 0 else ""
-            log.info('downloading %s"%s" to "%s"', length_text, source_url, target_path)
+            log.info('downloading %s from "%s" to "%s"', length_text, source_url, target_path)
             with open(target_path, "wb") as target_file:
                 for chunk in response.iter_content(chunk_size=_DOWNLOAD_BUFFER_SIZE):
                     if chunk:  # filter out keep-alive new chunks
