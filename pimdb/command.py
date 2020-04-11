@@ -179,6 +179,7 @@ class _BuildCommand:
             self._database.build_title_type_table(self._connection)
             self._database.build_name_table(self._connection)
             self._database.build_title_table(self._connection)
+            self._database.build_title_alias_and_title_alias_to_title_alias_type_table(self._connection)
             self._database.build_participation_and_character_tables(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_genre_table(self._connection)

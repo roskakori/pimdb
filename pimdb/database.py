@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable
@@ -46,10 +47,10 @@ _ALIAS_TYPES_LENGTH = 64
 #: The "title_akas.attributes" field is a mess.
 _ATTRIBUTES_LENGTH = 128
 
-IMDB_ALIAS_TYPES = ["alternative", "dvd", "festival", "tv", "video", "working", "original", "imdbDisplay"]
+IMDB_TITLE_ALIAS_TYPES = ["alternative", "dvd", "festival", "tv", "video", "working", "original", "imdbDisplay"]
 
-_ALIAS_TYPE_LENGTH = max(len(item) for item in IMDB_ALIAS_TYPES)
-_ALIAS_TYPES_LENGTH = sum(len(item) for item in IMDB_ALIAS_TYPES)
+_ALIAS_TYPE_LENGTH = max(len(item) for item in IMDB_TITLE_ALIAS_TYPES)
+_ALIAS_TYPES_LENGTH = sum(len(item) for item in IMDB_TITLE_ALIAS_TYPES)
 
 _TITLE_TYPE_LENGTH = 16  # TODO: document current maximum.
 
@@ -175,7 +176,6 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
         _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
         _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
-        _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         (
             ReportTable.NAME,
             [
@@ -229,15 +229,17 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("ordering", Integer, nullable=False),
                 Column("title", String(_TITLE_LENGTH), nullable=False),
-                Column("region", String(_REGION_LENGTH)),
-                Column("language", String(_LANGUAGE_LENGTH)),
-                Column("title_alias_type_id", Integer, ForeignKey("title_alias_type.id")),
-                Column("original_title", String(_TITLE_LENGTH), nullable=False),
+                Column("region_code", String(_REGION_LENGTH)),
+                Column("language_code", String(_LANGUAGE_LENGTH)),
                 # NOTE: is_original_title sometimes actually is null.
                 Column("is_original_title", Boolean, nullable=False),
                 Index("index__title_alias__title_id__ordering", "title_id", "ordering", unique=True),
             ],
         ),
+        _ordered_relation_table_info(
+            ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE, ReportTable.TITLE_ALIAS, ReportTable.TITLE_ALIAS_TYPE
+        ),
+        _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         _ordered_relation_table_info(ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME),
         _ordered_relation_table_info(ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
         _ordered_relation_table_info(ReportTable.TITLE_TO_TITLE_TYPE, ReportTable.TITLE, ReportTable.TITLE_TYPE),
@@ -297,6 +299,7 @@ class Database:
         self._tconst_to_title_id_map = None
         self._unknown_type_id = None
         self._data_to_insert = None
+        self._unknown_title_alias_types = None
 
     @property
     def engine(self) -> Engine:
@@ -354,7 +357,9 @@ class Database:
     def create_imdb_dataset_tables(self):
         log.info("creating imdb dataset tables")
         self._imdb_dataset_to_table_map = {
-            table_name: Table(table_name.table_name, self.metadata, *columns)
+            table_name: Table(
+                table_name.table_name, self.metadata, *columns, comment=f"IMDb dataset {table_name.filename}"
+            )
             for table_name, columns in imdb_dataset_table_infos()
         }
         if self._has_to_drop_tables:
@@ -454,7 +459,7 @@ class Database:
 
     def build_title_alias_type_table(self, connection: Connection) -> None:
         with connection.begin():
-            self.build_key_table_from_values(connection, ReportTable.TITLE_ALIAS_TYPE, IMDB_ALIAS_TYPES)
+            self.build_key_table_from_values(connection, ReportTable.TITLE_ALIAS_TYPE, IMDB_TITLE_ALIAS_TYPES)
             title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TYPE)
             connection.execute(title_alias_type_table.insert({"name": "unknown"}))
         (self._unknown_type_id,) = connection.execute(
@@ -736,3 +741,82 @@ class Database:
                             director_nconst,
                             tconst,
                         )
+
+    @functools.lru_cache(None)
+    def mappable_title_alias_types(self, raw_title_types: str) -> List[str]:
+        result = []
+        if raw_title_types:
+            remaining_raw_title_alias_types = raw_title_types
+            for title_alias_type_to_check in IMDB_TITLE_ALIAS_TYPES:
+                if title_alias_type_to_check in remaining_raw_title_alias_types:
+                    result.append(title_alias_type_to_check)
+                    remaining_raw_title_alias_types = remaining_raw_title_alias_types.replace(
+                        title_alias_type_to_check, ""
+                    )
+            if (
+                remaining_raw_title_alias_types
+                and remaining_raw_title_alias_types not in self._unknown_title_alias_types
+            ):
+                self._unknown_title_alias_types.add(remaining_raw_title_alias_types)
+                log.warning(
+                    'cannot map %s.types "%s" to a known type: IMDB_TITLE_ALIAS_TYPES should be extended accordingly',
+                    ImdbDataset.TITLE_AKAS.table_name,
+                    remaining_raw_title_alias_types,
+                )
+        return result
+
+    def build_title_alias_and_title_alias_to_title_alias_type_table(self, connection: Connection):
+        title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
+        title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
+        Database._log_building_table(title_alias_table)
+        title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
+        title_table = self.report_table_for(ReportTable.TITLE)
+        title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
+        self._unknown_title_alias_types = set()
+
+        title_akas_types_column = title_akas_table.c.types
+        select_title_akas_data = select(
+            [
+                title_table.c.id,
+                title_akas_table.c.ordering,
+                title_akas_table.c.title,
+                title_akas_table.c.region,
+                title_akas_table.c.language,
+                title_akas_table.c.isOriginalTitle,
+                title_akas_types_column,
+            ]
+        ).select_from(title_table.join(title_akas_table, title_akas_table.c.titleId == title_table.c.tconst))
+        with connection.begin():
+            connection.execute(title_alias_table.delete())
+            title_alias_id = 0
+            for (
+                title_id,
+                title_alias_ordering,
+                title,
+                region,
+                language,
+                is_original_title,
+                raw_title_alias_types,
+            ) in connection.execute(select_title_akas_data):
+                title_alias_id += 1
+                title_alias_data = {
+                    "id": title_alias_id,
+                    "title_id": title_id,
+                    "ordering": title_alias_ordering,
+                    "title": title,
+                    "region_code": None if region is None else region.lower(),
+                    "language_code": None if language is None else language.lower(),
+                    "is_original_title": is_original_title,
+                }
+                connection.execute(title_alias_table.insert(title_alias_data))
+
+                title_alias_type_ordering = 0
+                for title_alias_type_name in self.mappable_title_alias_types(raw_title_alias_types):
+                    title_alias_type_id = title_alias_type_name_to_id_map[title_alias_type_name]
+                    title_alias_type_ordering += 1
+                    title_alias_type_data = {
+                        "title_alias_id": title_alias_id,
+                        "ordering": title_alias_type_ordering,
+                        "title_alias_type_id": title_alias_type_id,
+                    }
+                    connection.execute(title_alias_to_title_alias_type_table.insert(title_alias_type_data))

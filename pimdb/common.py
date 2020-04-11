@@ -69,6 +69,7 @@ class ReportTable(Enum):
     PROFESSION = "profession"  # Extracted from title.principal.category
     TITLE = "title"
     TITLE_ALIAS = "title_alias"
+    TITLE_ALIAS_TO_TITLE_ALIAS_TYPE = "title_alias_to_title_alias_type"
     TITLE_ALIAS_TYPE = "title_alias_type"
     TITLE_TO_GENRE = "title_to_genre"
     TITLE_TO_DIRECTOR = "title_to_director"
