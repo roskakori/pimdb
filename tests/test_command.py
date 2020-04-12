@@ -43,6 +43,7 @@ def test_can_transfer_all_datasets(gzip_tsv_files):
     assert exit_code == 0
 
 
+@pytest.skip("see FIXME comment for details")
 def test_can_download_title_ratings():
     # FIXME This test has several issues that should be addressed by mocking the download:
     #  1. Every time it runs, it actually downloads about 5 MB, which is wasteful.
@@ -79,7 +80,7 @@ def test_can_download_title_ratings():
 
     target_path_modified_after_second_download = os.path.getmtime(expected_target_path)
 
-    assert target_path_modified_after_first_download == target_path_modified_after_second_download
+    assert target_path_modified_after_first_download == pytest.approx(target_path_modified_after_second_download)
 
 
 def test_can_build_report_tables(gzip_tsv_files):
