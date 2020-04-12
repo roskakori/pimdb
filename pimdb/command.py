@@ -8,12 +8,7 @@ from typing import List, Optional
 from sqlalchemy.engine import Connection
 
 from pimdb import __version__
-from pimdb.common import (
-    download_imdb_dataset,
-    log,
-    ImdbDataset,
-    IMDB_DATASET_NAMES,
-)
+from pimdb.common import download_imdb_dataset, log, ImdbDataset, IMDB_DATASET_NAMES, PimdbError
 from pimdb.database import Database, DEFAULT_BULK_SIZE
 
 _DEFAULT_DATABASE = "sqlite:///pimdb.db"
@@ -179,8 +174,11 @@ class _BuildCommand:
             self._database.build_title_type_table(self._connection)
             self._database.build_name_table(self._connection)
             self._database.build_title_table(self._connection)
-            self._database.build_title_alias_and_title_alias_to_title_alias_type_table(self._connection)
-            self._database.build_participation_and_character_tables(self._connection)
+            self._database.build_title_alias_table(self._connection)
+            self._database.build_title_alias_to_title_alias_type_table(self._connection)
+            self._database.build_participation_table(self._connection)
+            self._database.build_character_table(self._connection)
+            self._database.build_participation_to_character_table(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_genre_table(self._connection)
             self._database.build_title_to_director_table(self._connection)
@@ -222,7 +220,7 @@ def exit_code_for(arguments: Optional[List[str]] = None) -> int:
         command_class = _COMMAND_NAME_TO_COMMAND_CLASS_MAP[command_name]
         command_class(parser, args).run()
         result = 0
-    except OSError as error:
+    except (PimdbError, OSError) as error:
         if command_name is None:
             log.error(error)
         else:
