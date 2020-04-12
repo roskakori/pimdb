@@ -44,6 +44,9 @@ def test_can_transfer_all_datasets(gzip_tsv_files):
 
 
 def test_can_download_title_ratings():
+    # FIXME This test has several issues that should be addressed by mocking the download:
+    #  1. Every time it runs, it actually downloads about 5 MB, which is wasteful.
+    #  2. It fails in case the remote dataset file changes between the first and second download.
     expected_target_path = output_path(ImdbDataset.TITLE_RATINGS.filename)
     # Ensure that the file to be downloaded does not exist already.
     try:

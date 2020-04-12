@@ -27,7 +27,7 @@ from sqlalchemy.sql.selectable import SelectBase
 from pimdb.common import log, ImdbDataset, PimdbError, ReportTable, GzippedTsvReader, IMDB_DATASET_NAMES
 
 #: Default number of bulk data (for e.g. SQL insert) to be collected in memory before they are sent to the database.
-DEFAULT_BULK_SIZE = 128
+DEFAULT_BULK_SIZE = 1024
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
@@ -235,7 +235,7 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
                 Column("region_code", String(_REGION_LENGTH)),
                 Column("language_code", String(_LANGUAGE_LENGTH)),
                 # NOTE: is_original_title sometimes actually is null.
-                Column("is_original_title", Boolean, nullable=False),
+                Column("is_original_title", Boolean),
                 Index("index__title_alias__title_id__ordering", "title_id", "ordering", unique=True),
             ],
         ),
@@ -407,7 +407,7 @@ class Database:
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
         result = {name: id_ for name, id_ in connection.execute(name_id_select)}
-        log.info("    found %d entried", len(result))
+        log.info("    found %d entries", len(result))
         return result
 
     def create_imdb_dataset_tables(self):
@@ -886,7 +886,7 @@ class Database:
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
         title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
         title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
-        Database._log_building_table(title_alias_table)
+        Database._log_building_table(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
         title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
         title_table = self.report_table_for(ReportTable.TITLE)
         title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
