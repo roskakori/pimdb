@@ -60,6 +60,9 @@ in the table match the names from the datasets, for example
 columns can be found at the download page for the
 [IMDb datasets](https://www.imdb.com/interfaces/).
 
+Optionally you can specify a different database using the `--database` option
+with an
+[SQLAlchemy engine configuration](https://docs.sqlalchemy.org/en/13/core/engines.html).
 
 ### Querying tables
 
@@ -67,30 +70,6 @@ To query the tables, you can use any database tool that supports SQLite, for
 example the freely available and platform independent community edition of
 [DBeaver](https://dbeaver.io/) or the
 [command line shell for SQLite](https://sqlite.org/cli.html).
-
-
-### Databases other than SQLite
-
-Optionally you can specify a different database using the `--database` option
-with an
-[SQLAlchemy engine configuration](https://docs.sqlalchemy.org/en/13/core/engines.html),
-which generally uses the template
-"dialect+driver://username:password@host:port/database". SQLAlchemy supports
-several SQL [dialects](https://docs.sqlalchemy.org/en/13/dialects/index.html)
-out of the box, and there are external dialects available for other
-SQL databases and other forms of tabular data such as
-[pydruid](https://github.com/druid-io/pydruid) (for Pandas),
-[PyHive](https://github.com/dropbox/PyHive#sqlalchemy) (for Presto and Hive)
-or [Solr](https://github.com/aadel/sqlalchemy-solr) (for the Solr search
-platform).
-
-Here's an example for using a [PostgreSQL](https://www.postgresql.org/)
-database:
-
-```bash
-pimdb transfer --database "postgresql://user:password@localhost:5432/mydatabase" all
-```
-
 
 ### Building normalized tables
 
@@ -157,15 +136,3 @@ example:
 ```bash
 pimdb transfer --help
 ```
-
-
-## Changes
-
-Version 0.2.0, 2020-04-xx
-
-* Improved performance of SQL inserts by using bulk inserts consistently and
-  changing loops to SQL `insert ... from select ...` (where possible).
-
-Version 0.1.0, 2020-04-11
-
-* Initial public release.
