@@ -350,11 +350,16 @@ class BulkInsert:
             self.close()
 
 
+def engined(engine_info_or_path: str) -> str:
+    return engine_info_or_path if "://" in engine_info_or_path else f"sqlite:///{engine_info_or_path}"
+
+
 class Database:
     def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE, has_to_drop_tables: bool = False):
         # FIXME: Remove possible username and password from logged engine info.
-        log.info("connecting to database %s", engine_info)
-        self._engine = create_engine(engine_info)
+        actual_engine_info = engined(engine_info)
+        log.info("connecting to database %s", actual_engine_info)
+        self._engine = create_engine(actual_engine_info)
         self._bulk_size = bulk_size
         self._has_to_drop_tables = has_to_drop_tables
         self._metadata = MetaData(self._engine)
