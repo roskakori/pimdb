@@ -361,7 +361,6 @@ class Database:
         self._imdb_dataset_to_table_map = None
         self._report_name_to_table_map = {}
         self._nconst_to_name_id_map = None
-        self._tconst_to_title_id_map = None
 
         #: Remembers title_alias_types that have yet to be added to IMDB_TITLE_ALIAS_TYPES.
         self._unknown_title_alias_types = None
@@ -395,19 +394,8 @@ class Database:
 
     def nconst_to_name_id_map(self, connection: Connection):
         if self._nconst_to_name_id_map is None:
-            log.info("  building mapping for nconst to name_id")
-            name_table = self.report_table_for(ReportTable.NAME)
-            name_select = select([name_table.c.id, name_table.c.nconst])
-            self._nconst_to_name_id_map = {nconst: name_id for name_id, nconst in connection.execute(name_select)}
+            self._nconst_to_name_id_map = self._natural_key_to_id_map(connection, ReportTable.NAME, "nconst")
         return self._nconst_to_name_id_map
-
-    def tconst_to_title_id_map(self, connection: Connection):
-        if self._tconst_to_title_id_map is None:
-            log.info("  building mapping for tconst to title_id")
-            title_table = self.report_table_for(ReportTable.TITLE)
-            title_select = select([title_table.c.id, title_table.c.tconst])
-            self._tconst_to_title_id_map = {tconst: title_id for title_id, tconst in connection.execute(title_select)}
-        return self._tconst_to_title_id_map
 
     def _natural_key_to_id_map(
         self, connection: Connection, report_table: ReportTable, natural_key_column: str = "name", id_column: str = "id"
@@ -708,7 +696,7 @@ class Database:
             .where(known_for_titles_column.isnot(None))
         )
         with connection.begin():
-            tconst_to_title_id_map = self.tconst_to_title_id_map(connection)
+            tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
             connection.execute(name_to_known_for_title_table.delete())
             with BulkInsert(connection, name_to_known_for_title_table, self._bulk_size) as bulk_insert:
                 for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
@@ -829,7 +817,7 @@ class Database:
         self, connection: Connection, column_with_nconsts_name: str, target_table: Table
     ) -> None:
         nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
-        log.info("building %s table", target_table.name)
+        self._log_building_table(target_table)
         title_table = self.report_table_for(ReportTable.TITLE)
         title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
         column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
@@ -850,7 +838,7 @@ class Database:
                             ordering += 1
                             bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
                         else:
-                            log.warning(
+                            log.debug(
                                 'ignored unknown %s.%s "%s" for title "%s"',
                                 title_crew_table.name,
                                 column_with_nconsts_name,
@@ -914,11 +902,11 @@ class Database:
             self.check_table_has_data(connection, title_alias_table)
 
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
-        title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
         title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
-        Database._log_building_table(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
-        title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
+        Database._log_building_table(title_alias_to_title_alias_type_table)
         title_table = self.report_table_for(ReportTable.TITLE)
+        title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
+        title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
         title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
         self._unknown_title_alias_types = set()
 
