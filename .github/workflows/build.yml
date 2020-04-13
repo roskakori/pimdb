@@ -40,5 +40,4 @@ jobs:
           pip install dist/pimdb-*.whl
       - name: Build documentation
         run: |
-          pip install -r docs/requirements.txt
           make -C docs html
