@@ -2,7 +2,7 @@ import pytest
 from functools import lru_cache
 from sqlalchemy.sql import select
 
-from pimdb.database import Database, ReportTable
+from pimdb.database import Database, ReportTable, engined
 from tests._common import sqlite_engine, TESTS_DATA_PATH
 
 _EXPECTED_KEY_VALUES = {"red", "green", "blue"}
@@ -43,3 +43,9 @@ def test_can_transfer_datasets():
     database = _create_database_with_tables(engine_info)
     with database.connection() as connection:
         database.build_all_dataset_tables(connection, TESTS_DATA_PATH)
+
+
+def test_can_enginite_path():
+    assert engined("some.db") == "sqlite:///some.db"
+    assert engined("/tmp/some.db") == "sqlite:////tmp/some.db"
+    assert engined("sqlite:////tmp/some.db") == "sqlite:////tmp/some.db"
