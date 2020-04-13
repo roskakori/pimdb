@@ -130,7 +130,7 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
     ]
 
 
-def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[ReportTable, List[Column]]:
+def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[ReportTable, List[Union[Column, Index]]]:
     assert isinstance(report_table, ReportTable)
     return (
         report_table,
@@ -144,7 +144,7 @@ def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[Report
 
 def _ordered_relation_table_info(
     table_to_create: ReportTable, from_table: ReportTable, to_table: ReportTable
-) -> Tuple[ReportTable, List[Column]]:
+) -> Tuple[ReportTable, List[Union[Column, Index]]]:
     """
     Information required to create a table representing an ordered relation
     pointing from ``from_table`` to ``to_table``, including the necessary
@@ -173,9 +173,18 @@ def _ordered_relation_table_info(
     )
 
 
-def report_table_infos() -> List[Tuple[ReportTable, List[Column]]]:
+def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]:
     return [
         _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
+        (
+            ReportTable.CHARACTERS_TO_CHARACTER,
+            [
+                Column(f"characters", String(_CHARACTERS_LENGTH), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
+                Index("index__name__characters__ordering", "characters", "ordering", unique=True),
+            ],
+        ),
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
         _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
         _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
@@ -568,72 +577,93 @@ class Database:
             connection.execute(insert_participation)
         self.check_table_count(connection, title_principals_table, participation_table, True)
 
-    def build_character_table(self, connection: Connection):
-        character_table = self.report_table_for(ReportTable.CHARACTER)
+    def build_characters_to_character_and_character_table(self, connection: Connection):
+        characters_to_character_table = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
         title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
         characters_column = title_principals_table.c.characters
+        select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
+        character_count = 1
+        # Add dummy character for participations that do not represent a character, for example director.
+        character_name_to_character_id_map = {"": character_count}
+        self._log_building_table(characters_to_character_table)
         with connection.begin():
-            select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
-            self.build_key_table_from_query(connection, ReportTable.CHARACTER, select_characters, "json")
-            # Add dummy character for participations that do not represent a character, for example director.
-            insert_none_character = character_table.insert({"name": ""})
-            connection.execute(insert_none_character)
+            connection.execute(characters_to_character_table.delete())
+            with BulkInsert(connection, characters_to_character_table, self._bulk_size) as bulk_insert:
+                for (characters,) in connection.execute(select_characters):
+                    try:
+                        characters_names_from_json = json.loads(characters)
+                    except Exception as error:
+                        raise PimdbError(
+                            f"cannot JSON parse {title_principals_table.name}.{characters_column.name}: "
+                            f"{characters!r}: {error}"
+                        )
+                    if not isinstance(characters_names_from_json, list):
+                        raise PimdbError(
+                            f"{title_principals_table.name}.{characters_column.name} must be a JSON list but is: "
+                            f"{characters!r}"
+                        )
+                    for ordering, character_name in enumerate(characters_names_from_json, start=1):
+                        character_id = character_name_to_character_id_map.get(character_name)
+                        if character_id is None:
+                            character_count += 1
+                            character_id = character_count
+                            character_name_to_character_id_map[character_name] = character_id
+                        bulk_insert.add({"characters": characters, "character_id": character_id, "ordering": ordering})
+
+        character_table = self.report_table_for(ReportTable.CHARACTER)
+        self._log_building_table(character_table)
+        with connection.begin():
+            connection.execute(character_table.delete())
+            with BulkInsert(connection, character_table, self._bulk_size) as bulk_insert:
+                for character_name, character_id in character_name_to_character_id_map.items():
+                    bulk_insert.add({"id": character_id, "name": character_name})
 
     def build_participation_to_character_table(self, connection: Connection):
         participation_to_character_table = self.report_table_for(ReportTable.PARTICIPATION_TO_CHARACTER)
         self._log_building_table(participation_to_character_table)
         name_table = self.report_table_for(ReportTable.NAME)
         participation_table = self.report_table_for(ReportTable.PARTICIPATION)
+        profession_table = self.report_table_for(ReportTable.PROFESSION)
         title_table = self.report_table_for(ReportTable.TITLE)
         title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+        characters_to_character = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
 
-        character_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.CHARACTER)
-
-        @functools.lru_cache(None)
-        def character_ids_from_json(character_json: Optional[str]) -> List[int]:
-            if characters_json is None:
-                result = [character_name_to_id_map.get("")]
-            else:
-                result = []
-                # TODO: Use same JSON checks as with build_key_table_from_query().
-                try:
-                    for character_name in json.loads(character_json):
-                        character_id = character_name_to_id_map.get(character_name)
-                        if character_name is not None:
-                            result.append(character_id)
-                        else:
-                            log.warning('cannot map character "%s" to a character.id; ignoring it', character_name)
-                except Exception as error:
-                    log.exception(error)
-            return result
-
-        characters_column = title_principals_table.c.characters
-        select_participation_data = select([participation_table.c.id, characters_column]).select_from(
-            participation_table.join(name_table, name_table.c.id == participation_table.c.name_id)
-            .join(title_table, title_table.c.id == participation_table.c.title_id)
-            .join(
-                title_principals_table,
-                and_(
-                    title_principals_table.c.nconst == name_table.c.nconst,
-                    title_principals_table.c.tconst == title_table.c.tconst,
-                    title_principals_table.c.ordering == participation_table.c.ordering,
-                ),
-            )
-        )
         with connection.begin():
             connection.execute(participation_to_character_table.delete())
-            with BulkInsert(connection, participation_to_character_table, self._bulk_size) as bulk_insert:
-                for participation_id, characters_json in connection.execute(select_participation_data):
-                    for participation_to_character_ordering, character_id in enumerate(
-                        character_ids_from_json(characters_json), start=1
-                    ):
-                        bulk_insert.add(
-                            {
-                                "character_id": character_id,
-                                "ordering": participation_to_character_ordering,
-                                "participation_id": participation_id,
-                            }
-                        )
+            insert_participation = participation_to_character_table.insert().from_select(
+                [
+                    participation_to_character_table.c.participation_id,
+                    participation_to_character_table.c.ordering,
+                    participation_to_character_table.c.character_id,
+                ],
+                select(
+                    [
+                        participation_table.c.id,
+                        characters_to_character.c.ordering,
+                        characters_to_character.c.character_id,
+                    ]
+                )
+                .select_from(
+                    participation_table.join(name_table, name_table.c.id == participation_table.c.name_id)
+                    .join(title_table, title_table.c.id == participation_table.c.title_id)
+                    .join(
+                        title_principals_table,
+                        and_(
+                            title_principals_table.c.nconst == name_table.c.nconst,
+                            title_principals_table.c.tconst == title_table.c.tconst,
+                            title_principals_table.c.ordering == participation_table.c.ordering,
+                        ),
+                    )
+                    .join(
+                        characters_to_character,
+                        characters_to_character.c.characters == title_principals_table.c.characters,
+                    )
+                    .join(profession_table, profession_table.c.name == title_principals_table.c.category)
+                )
+                .distinct(),
+            )
+            connection.execute(insert_participation)
+        self.check_table_has_data(connection, participation_to_character_table, True)
 
     @staticmethod
     def _log_building_table(table: Table) -> None:
