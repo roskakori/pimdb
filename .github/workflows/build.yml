@@ -38,3 +38,6 @@ jobs:
           python setup.py bdist_wheel
           if [[ ${{ matrix.python-version }} == $MAIN_PYTHON_VERSION ]]; then twine check dist/pimdb-*.whl; fi
           pip install dist/pimdb-*.whl
+      - name: Build documentation
+        run: |
+          make -C docs html
