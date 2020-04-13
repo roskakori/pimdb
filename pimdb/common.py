@@ -61,6 +61,7 @@ class ImdbDataset(Enum):
 
 class ReportTable(Enum):
     CHARACTER = "character"
+    CHARACTERS_TO_CHARACTER = "characters_to_character"
     GENRE = "genre"
     NAME = "name"
     NAME_TO_KNOWN_FOR_TITLE = "name_to_known_for_title"
