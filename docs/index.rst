@@ -1,20 +1,22 @@
-.. pimdb documentation master file, created by
-   sphinx-quickstart on Sun Apr 12 16:07:23 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+pimdb
+=====
 
-Welcome to pimdb's documentation!
-=================================
+Pimdb is a python package and command line utility to maintain a local copy of
+the essential parts of the
+`Internet Movie Database <https://imdb.com>`_ (IMDb) based in the TSV files
+available from `IMDb datasets <https://www.imdb.com/interfaces/>`_.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Table of contents
 
-
+   installation
+   usage
+   contributing
+   changes
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
-* :ref:`modindex`
 * :ref:`search`
