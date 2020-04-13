@@ -41,8 +41,9 @@ _CREW_COUNT = 2048  # current maximum: 1180
 _PROFESSION_LENGTH = 32  # current maximum (from title.principals.category): 19
 _PROFESSION_COUNT = 3
 _JOB_LENGTH = 512  # current maximum: 286
-_CHARACTER_LENGTH = 512  # TODO: limit to reasonable maximum
+_CHARACTER_LENGTH = 1024  # current maximum: 459
 _CHARACTERS_LENGTH = 1024  # current maximum: 463
+_KNOWN_FOR_TITLES_LENGTH = (_TCONST_LENGTH + 1) * 20 - 1  # current maximum: 159 resp. 15 titles
 
 #: The "title_akas.types" field is a mess.
 _ALIAS_TYPES_LENGTH = 64
@@ -83,7 +84,7 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
                 Column("birthYear", Integer),
                 Column("deathYear", Integer),
                 Column("primaryProfession", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
-                Column("knownForTitles", String((_TCONST_LENGTH + 1) * 4 - 1)),
+                Column("knownForTitles", String(_KNOWN_FOR_TITLES_LENGTH)),
             ],
         ),
         (
