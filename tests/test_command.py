@@ -43,6 +43,12 @@ def test_can_transfer_all_datasets(gzip_tsv_files):
     assert exit_code == 0
 
 
+def test_can_query_dataset(gzip_tsv_files):
+    database_engine = sqlite_engine(test_can_transfer_all_datasets)
+    exit_code = exit_code_for(["query", "--database", database_engine, "select count(1)"])
+    assert exit_code == 0
+
+
 @pytest.mark.skip("see FIXME comment for details")
 def test_can_download_title_ratings():
     # FIXME This test has several issues that should be addressed by mocking the download:
