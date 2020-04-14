@@ -31,7 +31,7 @@ DEFAULT_BULK_SIZE = 1024
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
-_TITLE_LENGTH = 512  # current maximum: 408
+_TITLE_LENGTH = 1024  # current maximum: 831 (in title.akas.title)
 _NAME_LENGTH = 160  # current maximum: 105
 _GENRE_LENGTH = 16
 _GENRE_COUNT = 4
@@ -45,18 +45,17 @@ _CHARACTER_LENGTH = 1024  # current maximum: 459
 _CHARACTERS_LENGTH = 1024  # current maximum: 463
 _KNOWN_FOR_TITLES_LENGTH = (_TCONST_LENGTH + 1) * 20 - 1  # current maximum: 159 resp. 15 titles
 
-#: The "title_akas.types" field is a mess.
-_ALIAS_TYPES_LENGTH = 64
-
 #: The "title_akas.attributes" field is a mess.
 _ATTRIBUTES_LENGTH = 128
 
 IMDB_TITLE_ALIAS_TYPES = ["alternative", "dvd", "festival", "tv", "video", "working", "original", "imdbDisplay"]
 
 _ALIAS_TYPE_LENGTH = max(len(item) for item in IMDB_TITLE_ALIAS_TYPES)
-_ALIAS_TYPES_LENGTH = sum(len(item) for item in IMDB_TITLE_ALIAS_TYPES)
 
-_TITLE_TYPE_LENGTH = 16  # TODO: document current maximum.
+#: The "title_akas.types" field is a mess.
+_ALIAS_TYPES_LENGTH = 128
+
+_TITLE_TYPE_LENGTH = 24  # current maximum: 12
 
 
 def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
