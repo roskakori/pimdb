@@ -46,6 +46,26 @@ example the freely available and platform independent community edition of
 `DBeaver <https://dbeaver.io/>`_ or the
 `command line shell for SQLite <https://sqlite.org/cli.html>`_.
 
+For simple queries you can also use :command:`pimdb`'s built-in ``query``
+command, for example:
+
+.. code-block:: bash
+
+    pimdb query "select count(1) from TitleBasics"
+
+The result is shown on the standard output and can be redirected to a file,
+for example:
+
+.. code-block:: bash
+
+    pimdb query "select primaryTitle, startYear from TitleBasics limit 10" >some.tsv
+
+You can also store a query in a text file and specify the path:
+
+.. code-block:: bash
+
+    pimdb query --file some-select.sql >some.tsv
+
 
 Databases other than SQLite
 ---------------------------

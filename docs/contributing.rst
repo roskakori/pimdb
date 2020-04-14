@@ -52,6 +52,34 @@ To build and browse the coverage report in HTML format:
     $ open htmlcov/index.html  # macOS only
 
 
+.. _test-run-with-postgres:
+
+Test run with PostgreSQL
+-----------------------------
+
+While the test suite uses SQLite, you can test run :command:`pimdb` on a
+PostgreSQL database in a docker container:
+
+1. Install `Docker Desktop <https://www.docker.com/get-started>`_
+2. Run the postgres container in port 5439 (possibly using :command:`sudo`):
+
+   .. code-block:: bash
+
+        docker-compose --file tests/docker-compose.yml up postgres
+
+3. Create the database (possibly using :command:`sudo`):
+
+   .. code-block:: bash
+
+        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb"
+
+4. Run :command:`pimdb`:
+
+   .. code-block:: bash
+
+        pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres@localhost:5439/pimdb all
+
+
 Documentation
 -------------
 

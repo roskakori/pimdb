@@ -5,6 +5,7 @@ import sys
 from enum import Enum
 from typing import List, Optional
 
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from pimdb import __version__
@@ -26,6 +27,7 @@ class CommandName(Enum):
 
     BUILD = "build"
     DOWNLOAD = "download"
+    QUERY = "query"
     TRANSFER = "transfer"
 
 
@@ -36,6 +38,7 @@ def _parser() -> argparse.ArgumentParser:
         parser_to_extend.add_argument(
             "--bulk",
             "-b",
+            type=int,
             dest="bulk_size",
             default=DEFAULT_BULK_SIZE,
             help=(
@@ -97,8 +100,13 @@ def _parser() -> argparse.ArgumentParser:
 
     download_parser = subparsers.add_parser(CommandName.DOWNLOAD.value, help="download IMDb datasets")
     add_dataset_folder(download_parser)
+    download_parser.add_argument(
+        "--force",
+        "-F",
+        action="store_true",
+        help="redownload even if file already exists and is newer than the online version",
+    )
     add_dataset_names(download_parser, "download")
-    download_parser.add_argument("--force", "-F", action="store_true")
 
     transfer_parser = subparsers.add_parser(
         CommandName.TRANSFER.value, help="transfer downloaded IMDb dataset files into SQL tables"
@@ -109,10 +117,19 @@ def _parser() -> argparse.ArgumentParser:
     add_dataset_names(transfer_parser, "transfer")
     add_drop(transfer_parser)
 
-    build_parser = subparsers.add_parser(CommandName.BUILD.value, help="build sanitized tables for reporting")
+    build_parser = subparsers.add_parser(
+        CommandName.BUILD.value, help="build normalized tables for more structured queries"
+    )
     add_bulk_size(build_parser)
     add_database(build_parser)
     add_drop(build_parser)
+
+    query_parser = subparsers.add_parser(
+        CommandName.QUERY.value, help="perform SQL query on database and show results as tab separated values (TSV)"
+    )
+    add_database(query_parser)
+    query_parser.add_argument("--file", "-f", action="store_true", help="")
+    query_parser.add_argument("sql_query", metavar="SQL-QUERY", help="SQL code of the query to perform")
 
     return result
 
@@ -185,9 +202,27 @@ class _BuildCommand:
             self._database.build_title_to_writer_table(self._connection)
 
 
+class _QueryCommand:
+    def __init__(self, _parser: argparse.ArgumentParser, args: argparse.Namespace):
+        self._database = Database(args.database)
+        if args.file:
+            log.info('reading query from "%s"', args.sql_query)
+            with open(args.sql_query, encoding="utf-8") as sql_query_file:
+                self.sql_query = sql_query_file.read()
+        else:
+            self._sql_query = args.sql_query
+
+    def run(self):
+        with self._database.connection() as connection:
+            sql_statement = text(self._sql_query)
+            for row in connection.execute(sql_statement):
+                print("\t".join(str(item) for item in row))
+
+
 _COMMAND_NAME_TO_COMMAND_CLASS_MAP = {
     CommandName.BUILD: _BuildCommand,
     CommandName.DOWNLOAD: _DownloadCommand,
+    CommandName.QUERY: _QueryCommand,
     CommandName.TRANSFER: _TransferCommand,
 }
 
