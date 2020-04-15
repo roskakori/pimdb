@@ -1,3 +1,5 @@
+# Copyright (c) 2020, Thomas Aglassinger.
+# All rights reserved. Distributed under the BSD License.
 import functools
 import json
 import os
@@ -296,6 +298,52 @@ def typed_column_to_value_map(
     return result
 
 
+class TableBuildStatus:
+    def __init__(self, connection: Connection, table: Table):
+        self._connection = connection
+        self._table = table
+        log.info("building table %s", table.name)
+        self._time = None
+        self.reset_time()
+
+    def reset_time(self):
+        self._time = time.time()
+
+    def clear_table(self):
+        self._connection.execute(self._table.delete())
+        self.reset_time()
+
+    def log_time(self, message_template: str, count: Optional[int] = None):
+        duration_in_seconds = time.time() - self._time
+        minutes, seconds = divmod(duration_in_seconds, 60)
+        duration = f"{int(minutes):02d}:{seconds:06.3f}"
+        rows_per_second = int(count / max(duration_in_seconds, 0.000001)) if count is not None else None
+        message = message_template.format(count=count, duration=duration, rows_per_second=rows_per_second)
+        log.info(f"  {message}")
+        self._time = None
+
+    def log_added_rows(self, count: Optional[Union[int, Connection]] = None):
+        if isinstance(count, int):
+            actual_count = count
+        elif isinstance(count, Connection):
+            actual_count = table_count(count, self._table)
+        else:
+            actual_count = None
+        self.log_time("added {count} rows in {duration} ({rows_per_second} rows per second)", count=actual_count)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, error_type, error_value, error_traceback):
+        pass
+
+
+def table_count(connection: Connection, table: Table) -> int:
+    # TODO: Is there a way to use SQLAlchemy core queries for that?
+    (result,) = connection.execute(text(f'select count(1) from "{table.name}"')).fetchone()
+    return result
+
+
 class BulkInsert:
     def __init__(self, connection: Connection, table: Table, bulk_size: int = DEFAULT_BULK_SIZE):
         assert bulk_size >= 1
@@ -304,7 +352,6 @@ class BulkInsert:
         self._bulk_size = bulk_size
         self._data = []
         self._count = 0
-        self._start_time = time.time()
 
     def add(self, data: Dict[str, Optional[Any]]):
         self._data.append(data)
@@ -324,22 +371,9 @@ class BulkInsert:
     def count(self):
         return self._count
 
-    @property
-    def duration_in_seconds(self):
-        return time.time() - self._start_time
-
     def close(self):
         if len(self._data) >= 1:
             self._flush()
-        duration_in_seconds = self.duration_in_seconds
-        minutes, seconds = divmod(duration_in_seconds, 60)
-        rows_per_second = 0 if duration_in_seconds == 0.0 else self.count / duration_in_seconds
-        log.info(
-            "  added %d rows in %s (%.2f rows per second)",
-            self.count,
-            f"{int(minutes):02d}:{seconds:06.3f}",
-            rows_per_second,
-        )
         self._data = None
 
     def __enter__(self):
@@ -356,7 +390,7 @@ def engined(engine_info_or_path: str) -> str:
 
 class Database:
     def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE, has_to_drop_tables: bool = False):
-        # FIXME: Remove possible username and password from logged engine info.
+        # FIXME: Remove possible username and pass word from logged engine info.
         actual_engine_info = engined(engine_info)
         log.info("connecting to database %s", actual_engine_info)
         self._engine = create_engine(actual_engine_info)
@@ -391,11 +425,6 @@ class Database:
 
     def connection(self) -> Connection:
         return self._engine.connect()
-
-    def table_count(self, connection: Connection, table: Table) -> int:
-        # TODO: Is there a way to use SQLAlchemy core queries for that?
-        (result,) = connection.execute(text(f'select count(1) from "{table.name}"')).fetchone()
-        return result
 
     def nconst_to_name_id_map(self, connection: Connection):
         if self._nconst_to_name_id_map is None:
@@ -440,22 +469,22 @@ class Database:
         imdb_dataset = ImdbDataset(imdb_dataset_name)
         table_to_modify = self.imdb_dataset_to_table_map[imdb_dataset]
         with connection.begin():
-            # Clear the entire table.
-            delete_statement = table_to_modify.delete()
-            connection.execute(delete_statement)
+            with TableBuildStatus(connection, table_to_modify) as table_build_status:
+                table_build_status.clear_table()
 
-            # Insert all rows from TSV.
-            key_columns = self.key_columns(imdb_dataset)
-            gzipped_tsv_path = os.path.join(dataset_folder, imdb_dataset.filename)
-            gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
-            with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
-                for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
-                    try:
-                        bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
-                    except PimdbError as error:
-                        raise PimdbError(
-                            f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
-                        )
+                # Insert all rows from TSV.
+                key_columns = self.key_columns(imdb_dataset)
+                gzipped_tsv_path = os.path.join(dataset_folder, imdb_dataset.filename)
+                gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
+                with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
+                    for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
+                        try:
+                            bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
+                        except PimdbError as error:
+                            raise PimdbError(
+                                f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
+                            )
+                    table_build_status.log_added_rows(bulk_insert._count)
 
     def create_report_tables(self):
         log.info("creating report tables")
@@ -477,32 +506,35 @@ class Database:
         self, connection: Connection, report_table: ReportTable, query: SelectBase, delimiter: Optional[str] = None
     ):
         table_to_build = self.report_table_for(report_table)
-        log.info("building key table: %s (from query)", table_to_build.name)
-        single_line_query = " ".join(str(query).replace("\n", " ").split())
-        log.debug("querying key values: %s", single_line_query)
-        values = set()
-        for (raw_value,) in connection.execute(query):
-            if delimiter is None:
-                values.add(raw_value)
-            elif delimiter == "json":
-                try:
-                    values_from_json = json.loads(raw_value)
-                except Exception as error:
-                    raise PimdbError(f"cannot extract JSON from {raw_value!r}: {error}")
-                if not isinstance(values_from_json, list):
-                    raise PimdbError(f"JSON column must be a list but is: {raw_value!r}")
-                values.update(values_from_json)
-            else:
-                values.update(raw_value.split(delimiter))
-        self._build_key_table_from_values(connection, table_to_build, values)
+        with TableBuildStatus(connection, table_to_build) as table_build_status:
+            single_line_query = " ".join(str(query).replace("\n", " ").split())
+            log.debug("querying key values: %s", single_line_query)
+            values = set()
+            for (raw_value,) in connection.execute(query):
+                if delimiter is None:
+                    values.add(raw_value)
+                elif delimiter == "json":
+                    try:
+                        values_from_json = json.loads(raw_value)
+                    except Exception as error:
+                        raise PimdbError(f"cannot extract JSON from {raw_value!r}: {error}")
+                    if not isinstance(values_from_json, list):
+                        raise PimdbError(f"JSON column must be a list but is: {raw_value!r}")
+                    values.update(values_from_json)
+                else:
+                    values.update(raw_value.split(delimiter))
+            table_build_status.clear_table()
+            self._build_key_table_from_values(connection, table_to_build, values)
+            table_build_status.log_added_rows(connection)
 
     def build_key_table_from_values(self, connection: Connection, report_table: ReportTable, values: Sequence[str]):
         table_to_build = self.report_table_for(report_table)
-        log.info("building key table: %s (from values)", report_table.value)
-        self._build_key_table_from_values(connection, table_to_build, values)
+        with TableBuildStatus(connection, table_to_build) as table_build_status:
+            table_build_status.clear_table()
+            self._build_key_table_from_values(connection, table_to_build, values)
+            table_build_status.log_added_rows()
 
     def _build_key_table_from_values(self, connection: Connection, table_to_build: Table, values: Sequence[str]):
-        connection.execute(table_to_build.delete())
         with BulkInsert(connection, table_to_build, self._bulk_size) as bulk_insert:
             for value in sorted(values):
                 bulk_insert.add({"name": value})
@@ -537,126 +569,132 @@ class Database:
 
     def build_participation_table(self, connection: Connection):
         participation_table = self.report_table_for(ReportTable.PARTICIPATION)
-        self._log_building_table(participation_table)
-        name_table = self.report_table_for(ReportTable.NAME)
-        title_table = self.report_table_for(ReportTable.TITLE)
-        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-        profession_table = self.report_table_for(ReportTable.PROFESSION)
+        with TableBuildStatus(connection, participation_table) as table_build_status:
+            name_table = self.report_table_for(ReportTable.NAME)
+            title_table = self.report_table_for(ReportTable.TITLE)
+            title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+            profession_table = self.report_table_for(ReportTable.PROFESSION)
 
-        with connection.begin():
-            connection.execute(participation_table.delete())
-            insert_participation = participation_table.insert().from_select(
-                [
-                    participation_table.c.title_id,
-                    participation_table.c.ordering,
-                    participation_table.c.name_id,
-                    participation_table.c.profession_id,
-                    participation_table.c.job,
-                ],
-                select(
+            with connection.begin():
+                table_build_status.clear_table()
+                insert_participation = participation_table.insert().from_select(
                     [
-                        title_table.c.id,
-                        title_principals_table.c.ordering,
-                        name_table.c.id,
-                        profession_table.c.id,
-                        title_principals_table.c.job,
-                    ]
-                ).select_from(
-                    title_principals_table.join(name_table, name_table.c.nconst == title_principals_table.c.nconst)
-                    .join(title_table, title_table.c.tconst == title_principals_table.c.tconst)
-                    .join(profession_table, profession_table.c.name == title_principals_table.c.category)
-                ),
-            )
-            connection.execute(insert_participation)
-        self.check_table_count(connection, title_principals_table, participation_table, True)
+                        participation_table.c.title_id,
+                        participation_table.c.ordering,
+                        participation_table.c.name_id,
+                        participation_table.c.profession_id,
+                        participation_table.c.job,
+                    ],
+                    select(
+                        [
+                            title_table.c.id,
+                            title_principals_table.c.ordering,
+                            name_table.c.id,
+                            profession_table.c.id,
+                            title_principals_table.c.job,
+                        ]
+                    ).select_from(
+                        title_principals_table.join(name_table, name_table.c.nconst == title_principals_table.c.nconst)
+                        .join(title_table, title_table.c.tconst == title_principals_table.c.tconst)
+                        .join(profession_table, profession_table.c.name == title_principals_table.c.category)
+                    ),
+                )
+                connection.execute(insert_participation)
+                table_build_status.log_added_rows(connection)
+                self.check_table_count(connection, title_principals_table, participation_table)
 
     def build_characters_to_character_and_character_table(self, connection: Connection):
         characters_to_character_table = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
-        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-        characters_column = title_principals_table.c.characters
-        select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
-        character_count = 1
-        # Add dummy character for participations that do not represent a character, for example director.
-        character_name_to_character_id_map = {"": character_count}
-        self._log_building_table(characters_to_character_table)
-        with connection.begin():
-            connection.execute(characters_to_character_table.delete())
-            with BulkInsert(connection, characters_to_character_table, self._bulk_size) as bulk_insert:
-                for (characters,) in connection.execute(select_characters):
-                    try:
-                        characters_names_from_json = json.loads(characters)
-                    except Exception as error:
-                        raise PimdbError(
-                            f"cannot JSON parse {title_principals_table.name}.{characters_column.name}: "
-                            f"{characters!r}: {error}"
-                        )
-                    if not isinstance(characters_names_from_json, list):
-                        raise PimdbError(
-                            f"{title_principals_table.name}.{characters_column.name} must be a JSON list but is: "
-                            f"{characters!r}"
-                        )
-                    for ordering, character_name in enumerate(characters_names_from_json, start=1):
-                        character_id = character_name_to_character_id_map.get(character_name)
-                        if character_id is None:
-                            character_count += 1
-                            character_id = character_count
-                            character_name_to_character_id_map[character_name] = character_id
-                        bulk_insert.add({"characters": characters, "character_id": character_id, "ordering": ordering})
+        with TableBuildStatus(connection, characters_to_character_table) as table_build_status:
+            title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+            characters_column = title_principals_table.c.characters
+            select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
+            character_count = 1
+            # Add dummy character for participations that do not represent a character, for example director.
+            character_name_to_character_id_map = {"": character_count}
+            with connection.begin():
+                table_build_status.clear_table()
+                with BulkInsert(connection, characters_to_character_table, self._bulk_size) as bulk_insert:
+                    for (characters,) in connection.execute(select_characters):
+                        try:
+                            characters_names_from_json = json.loads(characters)
+                        except Exception as error:
+                            raise PimdbError(
+                                f"cannot JSON parse {title_principals_table.name}.{characters_column.name}: "
+                                f"{characters!r}: {error}"
+                            )
+                        if not isinstance(characters_names_from_json, list):
+                            raise PimdbError(
+                                f"{title_principals_table.name}.{characters_column.name} must be a JSON list but is: "
+                                f"{characters!r}"
+                            )
+                        for ordering, character_name in enumerate(characters_names_from_json, start=1):
+                            character_id = character_name_to_character_id_map.get(character_name)
+                            if character_id is None:
+                                character_count += 1
+                                character_id = character_count
+                                character_name_to_character_id_map[character_name] = character_id
+                            bulk_insert.add(
+                                {"characters": characters, "character_id": character_id, "ordering": ordering}
+                            )
+                    table_build_status.log_added_rows(bulk_insert.count)
 
         character_table = self.report_table_for(ReportTable.CHARACTER)
-        self._log_building_table(character_table)
-        with connection.begin():
-            connection.execute(character_table.delete())
-            with BulkInsert(connection, character_table, self._bulk_size) as bulk_insert:
-                for character_name, character_id in character_name_to_character_id_map.items():
-                    bulk_insert.add({"id": character_id, "name": character_name})
+        with TableBuildStatus(connection, character_table) as character_build_status:
+            with connection.begin():
+                character_build_status.clear_table()
+                with BulkInsert(connection, character_table, self._bulk_size) as character_bulk_insert:
+                    for character_name, character_id in character_name_to_character_id_map.items():
+                        character_bulk_insert.add({"id": character_id, "name": character_name})
+                    character_build_status.log_added_rows(character_bulk_insert.count)
 
     def build_participation_to_character_table(self, connection: Connection):
         participation_to_character_table = self.report_table_for(ReportTable.PARTICIPATION_TO_CHARACTER)
-        self._log_building_table(participation_to_character_table)
-        name_table = self.report_table_for(ReportTable.NAME)
-        participation_table = self.report_table_for(ReportTable.PARTICIPATION)
-        profession_table = self.report_table_for(ReportTable.PROFESSION)
-        title_table = self.report_table_for(ReportTable.TITLE)
-        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-        characters_to_character = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
+        with TableBuildStatus(connection, participation_to_character_table) as table_build_status:
+            name_table = self.report_table_for(ReportTable.NAME)
+            participation_table = self.report_table_for(ReportTable.PARTICIPATION)
+            profession_table = self.report_table_for(ReportTable.PROFESSION)
+            title_table = self.report_table_for(ReportTable.TITLE)
+            title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+            characters_to_character = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
 
-        with connection.begin():
-            connection.execute(participation_to_character_table.delete())
-            insert_participation = participation_to_character_table.insert().from_select(
-                [
-                    participation_to_character_table.c.participation_id,
-                    participation_to_character_table.c.ordering,
-                    participation_to_character_table.c.character_id,
-                ],
-                select(
+            with connection.begin():
+                table_build_status.clear_table()
+                insert_participation = participation_to_character_table.insert().from_select(
                     [
-                        participation_table.c.id,
-                        characters_to_character.c.ordering,
-                        characters_to_character.c.character_id,
-                    ]
-                )
-                .select_from(
-                    participation_table.join(name_table, name_table.c.id == participation_table.c.name_id)
-                    .join(title_table, title_table.c.id == participation_table.c.title_id)
-                    .join(
-                        title_principals_table,
-                        and_(
-                            title_principals_table.c.nconst == name_table.c.nconst,
-                            title_principals_table.c.tconst == title_table.c.tconst,
-                            title_principals_table.c.ordering == participation_table.c.ordering,
-                        ),
+                        participation_to_character_table.c.participation_id,
+                        participation_to_character_table.c.ordering,
+                        participation_to_character_table.c.character_id,
+                    ],
+                    select(
+                        [
+                            participation_table.c.id,
+                            characters_to_character.c.ordering,
+                            characters_to_character.c.character_id,
+                        ]
                     )
-                    .join(
-                        characters_to_character,
-                        characters_to_character.c.characters == title_principals_table.c.characters,
+                    .select_from(
+                        participation_table.join(name_table, name_table.c.id == participation_table.c.name_id)
+                        .join(title_table, title_table.c.id == participation_table.c.title_id)
+                        .join(
+                            title_principals_table,
+                            and_(
+                                title_principals_table.c.nconst == name_table.c.nconst,
+                                title_principals_table.c.tconst == title_table.c.tconst,
+                                title_principals_table.c.ordering == participation_table.c.ordering,
+                            ),
+                        )
+                        .join(
+                            characters_to_character,
+                            characters_to_character.c.characters == title_principals_table.c.characters,
+                        )
+                        .join(profession_table, profession_table.c.name == title_principals_table.c.category)
                     )
-                    .join(profession_table, profession_table.c.name == title_principals_table.c.category)
+                    .distinct(),
                 )
-                .distinct(),
-            )
-            connection.execute(insert_participation)
-        self.check_table_has_data(connection, participation_to_character_table, True)
+                connection.execute(insert_participation)
+                table_build_status.log_added_rows(connection)
+                self.check_table_has_data(connection, participation_to_character_table)
 
     @staticmethod
     def _log_building_table(table: Table) -> None:
@@ -664,116 +702,115 @@ class Database:
 
     def build_name_table(self, connection: Connection) -> None:
         name_table = self.report_table_for(ReportTable.NAME)
-        Database._log_building_table(name_table)
-        name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
-        with connection.begin():
-            delete_statement = name_table.delete().execution_options(autocommit=True)
-            connection.execute(delete_statement)
-            insert_statement = name_table.insert().from_select(
-                [
-                    name_table.c.nconst,
-                    name_table.c.primary_name,
-                    name_table.c.birth_year,
-                    name_table.c.death_year,
-                    name_table.c.primary_professions,
-                ],
-                select(
+        with TableBuildStatus(connection, name_table) as table_build_status:
+            name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
+            with connection.begin():
+                table_build_status.clear_table()
+                insert_statement = name_table.insert().from_select(
                     [
-                        name_basics_table.c.nconst,
-                        name_basics_table.c.primaryName,
-                        name_basics_table.c.birthYear,
-                        name_basics_table.c.deathYear,
-                        name_basics_table.c.primaryProfession,
-                    ]
-                ),
-            )
-            connection.execute(insert_statement)
+                        name_table.c.nconst,
+                        name_table.c.primary_name,
+                        name_table.c.birth_year,
+                        name_table.c.death_year,
+                        name_table.c.primary_professions,
+                    ],
+                    select(
+                        [
+                            name_basics_table.c.nconst,
+                            name_basics_table.c.primaryName,
+                            name_basics_table.c.birthYear,
+                            name_basics_table.c.deathYear,
+                            name_basics_table.c.primaryProfession,
+                        ]
+                    ),
+                )
+                connection.execute(insert_statement)
+                table_build_status.log_added_rows(connection)
 
     def build_name_to_known_for_title_table(self, connection: Connection):
         name_to_known_for_title_table = self.report_table_for(ReportTable.NAME_TO_KNOWN_FOR_TITLE)
-        Database._log_building_table(name_to_known_for_title_table)
-        name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
-        name_table = self.report_table_for(ReportTable.NAME)
-        known_for_titles_column = name_basics_table.c.knownForTitles
-        select_known_for_title_tconsts = (
-            select([name_table.c.id, name_table.c.nconst, known_for_titles_column])
-            .select_from(name_table.join(name_basics_table, name_basics_table.c.nconst == name_table.c.nconst))
-            .where(known_for_titles_column.isnot(None))
-        )
-        with connection.begin():
-            tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
-            connection.execute(name_to_known_for_title_table.delete())
-            with BulkInsert(connection, name_to_known_for_title_table, self._bulk_size) as bulk_insert:
-                for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
-                    ordering = 0
-                    for tconst in known_for_titles_tconsts.split(","):
-                        title_id = tconst_to_title_id_map.get(tconst)
-                        if title_id is not None:
-                            ordering += 1
-                            bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
-                        else:
-                            log.debug(
-                                'ignored unknown %s.%s "%s" for name "%s"',
-                                name_basics_table.name,
-                                known_for_titles_column.name,
-                                tconst,
-                                nconst,
-                            )
+        with TableBuildStatus(connection, name_to_known_for_title_table) as table_build_status:
+            name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
+            name_table = self.report_table_for(ReportTable.NAME)
+            known_for_titles_column = name_basics_table.c.knownForTitles
+            select_known_for_title_tconsts = (
+                select([name_table.c.id, name_table.c.nconst, known_for_titles_column])
+                .select_from(name_table.join(name_basics_table, name_basics_table.c.nconst == name_table.c.nconst))
+                .where(known_for_titles_column.isnot(None))
+            )
+            with connection.begin():
+                tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+                table_build_status.clear_table()
+                with BulkInsert(connection, name_to_known_for_title_table, self._bulk_size) as bulk_insert:
+                    for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
+                        ordering = 0
+                        for tconst in known_for_titles_tconsts.split(","):
+                            title_id = tconst_to_title_id_map.get(tconst)
+                            if title_id is not None:
+                                ordering += 1
+                                bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
+                            else:
+                                log.debug(
+                                    'ignored unknown %s.%s "%s" for name "%s"',
+                                    name_basics_table.name,
+                                    known_for_titles_column.name,
+                                    tconst,
+                                    nconst,
+                                )
+                    table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_table(self, connection: Connection) -> None:
         title_table = self.report_table_for(ReportTable.TITLE)
-        Database._log_building_table(title_table)
-        title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
-        title_ratings_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_RATINGS]
-        title_type_table = self.report_table_for(ReportTable.TITLE_TYPE)
-        with connection.begin():
-            delete_statement = title_table.delete().execution_options(autocommit=True)
-            connection.execute(delete_statement)
-            insert_statement = title_table.insert().from_select(
-                [
-                    title_table.c.tconst,
-                    title_table.c.title_type_id,
-                    title_table.c.primary_title,
-                    title_table.c.original_title,
-                    title_table.c.is_adult,
-                    title_table.c.start_year,
-                    title_table.c.end_year,
-                    title_table.c.runtime_minutes,
-                    title_table.c.average_rating,
-                    title_table.c.rating_count,
-                ],
-                select(
+        with TableBuildStatus(connection, title_table) as table_build_status:
+            title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
+            title_ratings_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_RATINGS]
+            title_type_table = self.report_table_for(ReportTable.TITLE_TYPE)
+            with connection.begin():
+                table_build_status.clear_table()
+                insert_statement = title_table.insert().from_select(
                     [
-                        title_basics_table.c.tconst,
-                        title_type_table.c.id,
-                        title_basics_table.c.primaryTitle,
-                        title_basics_table.c.originalTitle,
-                        title_basics_table.c.isAdult,
-                        title_basics_table.c.startYear,
-                        title_basics_table.c.endYear,
-                        title_basics_table.c.runtimeMinutes,
-                        coalesce(title_ratings_table.c.averageRating, 0),
-                        coalesce(title_ratings_table.c.numVotes, 0),
-                    ]
-                ).select_from(
-                    title_basics_table.join(
-                        title_type_table, title_type_table.c.name == title_basics_table.c.titleType
-                    ).join(
-                        # Not all titles are rated so we need to use an outer join here.
-                        title_ratings_table,
-                        title_ratings_table.c.tconst == title_basics_table.c.tconst,
-                        isouter=True,
-                    )
-                ),
-            )
-            connection.execute(insert_statement)
-            self.check_table_count(connection, title_basics_table, title_table)
+                        title_table.c.tconst,
+                        title_table.c.title_type_id,
+                        title_table.c.primary_title,
+                        title_table.c.original_title,
+                        title_table.c.is_adult,
+                        title_table.c.start_year,
+                        title_table.c.end_year,
+                        title_table.c.runtime_minutes,
+                        title_table.c.average_rating,
+                        title_table.c.rating_count,
+                    ],
+                    select(
+                        [
+                            title_basics_table.c.tconst,
+                            title_type_table.c.id,
+                            title_basics_table.c.primaryTitle,
+                            title_basics_table.c.originalTitle,
+                            title_basics_table.c.isAdult,
+                            title_basics_table.c.startYear,
+                            title_basics_table.c.endYear,
+                            title_basics_table.c.runtimeMinutes,
+                            coalesce(title_ratings_table.c.averageRating, 0),
+                            coalesce(title_ratings_table.c.numVotes, 0),
+                        ]
+                    ).select_from(
+                        title_basics_table.join(
+                            title_type_table, title_type_table.c.name == title_basics_table.c.titleType
+                        ).join(
+                            # Not all titles are rated so we need to use an outer join here.
+                            title_ratings_table,
+                            title_ratings_table.c.tconst == title_basics_table.c.tconst,
+                            isouter=True,
+                        )
+                    ),
+                )
+                connection.execute(insert_statement)
+                table_build_status.log_added_rows(connection)
+                self.check_table_count(connection, title_basics_table, title_table)
 
-    def check_table_count(self, connection, source_table, target_table, log_count=False):
-        source_table_count = self.table_count(connection, source_table)
-        target_table_count = self.table_count(connection, target_table)
-        if log_count:
-            log.info('  added %d rows to "%s"', target_table_count, target_table.name)
+    def check_table_count(self, connection, source_table, target_table):
+        source_table_count = table_count(connection, source_table)
+        target_table_count = table_count(connection, target_table)
         if target_table_count != source_table_count:
             log.warning(
                 'target table "%s" has %d rows but should have %d same as source table "%s"',
@@ -783,32 +820,31 @@ class Database:
                 source_table.name,
             )
 
-    def check_table_has_data(self, connection: Connection, target_table: Table, log_count: bool = False):
-        target_table_count = self.table_count(connection, target_table)
-        if log_count:
-            log.info('  added %d rows to "%s"', target_table_count, target_table.name)
+    def check_table_has_data(self, connection: Connection, target_table: Table):
+        target_table_count = table_count(connection, target_table)
         if target_table_count == 0:
             log.warning('target table "%s" should contain rows but is empty',)
 
     def build_title_to_genre_table(self, connection: Connection):
         title_to_genre_table = self.report_table_for(ReportTable.TITLE_TO_GENRE)
-        Database._log_building_table(title_to_genre_table)
-        title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
-        title_table = self.report_table_for(ReportTable.TITLE)
-        genres_column = title_basics_table.c.genres
-        select_genre_data = (
-            select([title_table.c.id, genres_column])
-            .select_from(title_table.join(title_basics_table, title_basics_table.c.tconst == title_table.c.tconst))
-            .where(genres_column.isnot(None))
-        )
-        genre_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.GENRE)
-        with connection.begin():
-            connection.execute(title_to_genre_table.delete())
-            with BulkInsert(connection, title_to_genre_table, self._bulk_size) as bulk_insert:
-                for title_id, genres in connection.execute(select_genre_data):
-                    for ordering, genre in enumerate(genres.split(","), start=1):
-                        genre_id = genre_name_to_id_map[genre]
-                        bulk_insert.add({"genre_id": genre_id, "ordering": ordering, "title_id": title_id})
+        with TableBuildStatus(connection, title_to_genre_table) as table_build_status:
+            title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
+            title_table = self.report_table_for(ReportTable.TITLE)
+            genres_column = title_basics_table.c.genres
+            select_genre_data = (
+                select([title_table.c.id, genres_column])
+                .select_from(title_table.join(title_basics_table, title_basics_table.c.tconst == title_table.c.tconst))
+                .where(genres_column.isnot(None))
+            )
+            genre_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.GENRE)
+            with connection.begin():
+                table_build_status.clear_table()
+                with BulkInsert(connection, title_to_genre_table, self._bulk_size) as bulk_insert:
+                    for title_id, genres in connection.execute(select_genre_data):
+                        for ordering, genre in enumerate(genres.split(","), start=1):
+                            genre_id = genre_name_to_id_map[genre]
+                            bulk_insert.add({"genre_id": genre_id, "ordering": ordering, "title_id": title_id})
+                    table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_to_director_table(self, connection: Connection) -> None:
         title_to_director_table = self.report_table_for(ReportTable.TITLE_TO_DIRECTOR)
@@ -821,35 +857,35 @@ class Database:
     def _build_title_to_crew_table(
         self, connection: Connection, column_with_nconsts_name: str, target_table: Table
     ) -> None:
-        nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
-        self._log_building_table(target_table)
-        title_table = self.report_table_for(ReportTable.TITLE)
-        title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
-        column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
-        with connection.begin():
-            delete_statement = target_table.delete()
-            connection.execute(delete_statement)
-            directors_select = (
-                select([title_table.c.id, title_table.c.tconst, column_with_nconsts])
-                .select_from(title_table.join(title_crew_table, title_table.c.tconst == title_crew_table.c.tconst))
-                .where(column_with_nconsts.isnot(None))
-            )
-            with BulkInsert(connection, target_table, self._bulk_size) as bulk_insert:
-                for title_id, tconst, directors in connection.execute(directors_select):
-                    ordering = 0
-                    for nconst in directors.split(","):
-                        name_id = nconst_to_name_id_map.get(nconst)
-                        if name_id is not None:
-                            ordering += 1
-                            bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
-                        else:
-                            log.debug(
-                                'ignored unknown %s.%s "%s" for title "%s"',
-                                title_crew_table.name,
-                                column_with_nconsts_name,
-                                nconst,
-                                tconst,
-                            )
+        with TableBuildStatus(connection, target_table) as table_build_status:
+            nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
+            title_table = self.report_table_for(ReportTable.TITLE)
+            title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
+            column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
+            with connection.begin():
+                table_build_status.clear_table()
+                directors_select = (
+                    select([title_table.c.id, title_table.c.tconst, column_with_nconsts])
+                    .select_from(title_table.join(title_crew_table, title_table.c.tconst == title_crew_table.c.tconst))
+                    .where(column_with_nconsts.isnot(None))
+                )
+                with BulkInsert(connection, target_table, self._bulk_size) as bulk_insert:
+                    for title_id, tconst, directors in connection.execute(directors_select):
+                        ordering = 0
+                        for nconst in directors.split(","):
+                            name_id = nconst_to_name_id_map.get(nconst)
+                            if name_id is not None:
+                                ordering += 1
+                                bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
+                            else:
+                                log.debug(
+                                    'ignored unknown %s.%s "%s" for title "%s"',
+                                    title_crew_table.name,
+                                    column_with_nconsts_name,
+                                    nconst,
+                                    tconst,
+                                )
+                    table_build_status.log_added_rows(bulk_insert.count)
 
     @functools.lru_cache(None)
     def mappable_title_alias_types(self, raw_title_types: str) -> List[str]:
@@ -877,72 +913,76 @@ class Database:
 
     def build_title_alias_table(self, connection: Connection):
         title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
-        Database._log_building_table(title_alias_table)
-        title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-        title_table = self.report_table_for(ReportTable.TITLE)
+        with TableBuildStatus(connection, title_alias_table) as table_build_status:
+            title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
+            title_table = self.report_table_for(ReportTable.TITLE)
 
-        with connection.begin():
-            connection.execute(title_alias_table.delete())
-            insert_title_alias_table = title_alias_table.insert().from_select(
-                [
-                    title_alias_table.c.title_id,
-                    title_alias_table.c.ordering,
-                    title_alias_table.c.title,
-                    title_alias_table.c.region_code,
-                    title_alias_table.c.language_code,
-                    title_alias_table.c.is_original_title,
-                ],
-                select(
+            with connection.begin():
+                table_build_status.clear_table()
+                insert_title_alias_table = title_alias_table.insert().from_select(
                     [
-                        title_table.c.id,
-                        title_akas_table.c.ordering,
-                        title_akas_table.c.title,
-                        title_akas_table.c.region,  # TODO: use lower()
-                        title_akas_table.c.language,  # TODO: use lower()
-                        title_akas_table.c.isOriginalTitle,
-                    ]
-                ).select_from(title_table.join(title_akas_table, title_akas_table.c.titleId == title_table.c.tconst)),
-            )
-            connection.execute(insert_title_alias_table)
-            self.check_table_has_data(connection, title_alias_table)
+                        title_alias_table.c.title_id,
+                        title_alias_table.c.ordering,
+                        title_alias_table.c.title,
+                        title_alias_table.c.region_code,
+                        title_alias_table.c.language_code,
+                        title_alias_table.c.is_original_title,
+                    ],
+                    select(
+                        [
+                            title_table.c.id,
+                            title_akas_table.c.ordering,
+                            title_akas_table.c.title,
+                            title_akas_table.c.region,  # TODO: use lower()
+                            title_akas_table.c.language,  # TODO: use lower()
+                            title_akas_table.c.isOriginalTitle,
+                        ]
+                    ).select_from(
+                        title_table.join(title_akas_table, title_akas_table.c.titleId == title_table.c.tconst)
+                    ),
+                )
+                connection.execute(insert_title_alias_table)
+                table_build_status.log_added_rows(connection)
+                self.check_table_has_data(connection, title_alias_table)
 
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
         title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
-        Database._log_building_table(title_alias_to_title_alias_type_table)
-        title_table = self.report_table_for(ReportTable.TITLE)
-        title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-        title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
-        title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
-        self._unknown_title_alias_types = set()
+        with TableBuildStatus(connection, title_alias_to_title_alias_type_table) as table_build_status:
+            title_table = self.report_table_for(ReportTable.TITLE)
+            title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
+            title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
+            title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
+            self._unknown_title_alias_types = set()
 
-        title_akas_types_column = title_akas_table.c.types
-        select_title_akas_data = (
-            select([title_alias_table.c.id, title_akas_table.c.ordering, title_akas_types_column])
-            .select_from(
-                title_alias_table.join(title_table, title_table.c.id == title_alias_table.c.title_id).join(
-                    title_akas_table,
-                    and_(
-                        title_akas_table.c.titleId == title_table.c.tconst,
-                        title_akas_table.c.ordering == title_alias_table.c.ordering,
-                    ),
+            title_akas_types_column = title_akas_table.c.types
+            select_title_akas_data = (
+                select([title_alias_table.c.id, title_akas_table.c.ordering, title_akas_types_column])
+                .select_from(
+                    title_alias_table.join(title_table, title_table.c.id == title_alias_table.c.title_id).join(
+                        title_akas_table,
+                        and_(
+                            title_akas_table.c.titleId == title_table.c.tconst,
+                            title_akas_table.c.ordering == title_alias_table.c.ordering,
+                        ),
+                    )
                 )
+                .where(title_akas_types_column.isnot(None))
             )
-            .where(title_akas_types_column.isnot(None))
-        )
-        with connection.begin():
-            connection.execute(title_alias_to_title_alias_type_table.delete())
-            with BulkInsert(connection, title_alias_to_title_alias_type_table, self._bulk_size) as bulk_insert:
-                for (title_alias_id, title_alias_ordering, raw_title_alias_types,) in connection.execute(
-                    select_title_akas_data
-                ):
-                    for title_alias_type_ordering, title_alias_type_name in enumerate(
-                        self.mappable_title_alias_types(raw_title_alias_types), start=1
+            with connection.begin():
+                table_build_status.clear_table()
+                with BulkInsert(connection, title_alias_to_title_alias_type_table, self._bulk_size) as bulk_insert:
+                    for (title_alias_id, title_alias_ordering, raw_title_alias_types,) in connection.execute(
+                        select_title_akas_data
                     ):
-                        title_alias_type_id = title_alias_type_name_to_id_map[title_alias_type_name]
-                        bulk_insert.add(
-                            {
-                                "title_alias_id": title_alias_id,
-                                "ordering": title_alias_type_ordering,
-                                "title_alias_type_id": title_alias_type_id,
-                            }
-                        )
+                        for title_alias_type_ordering, title_alias_type_name in enumerate(
+                            self.mappable_title_alias_types(raw_title_alias_types), start=1
+                        ):
+                            title_alias_type_id = title_alias_type_name_to_id_map[title_alias_type_name]
+                            bulk_insert.add(
+                                {
+                                    "title_alias_id": title_alias_id,
+                                    "ordering": title_alias_type_ordering,
+                                    "title_alias_type_id": title_alias_type_id,
+                                }
+                            )
+                table_build_status.log_added_rows(bulk_insert.count)

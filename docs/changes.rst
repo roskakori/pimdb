@@ -1,6 +1,11 @@
 Changes
 =======
 
+Version 0.2.0, 2020-04-xx
+
+* Cleaned up logging for ``transfer`` and ``build`` to consistently log the
+  time and rows per second for each table.
+
 Version 0.1.2, 2020-04-14
 
 * Fixed remaining "value to long" errors (issue

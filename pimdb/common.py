@@ -1,3 +1,5 @@
+# Copyright (c) 2020, Thomas Aglassinger.
+# All rights reserved. Distributed under the BSD License.
 import csv
 import gzip
 import json
@@ -201,7 +203,7 @@ class GzippedTsvReader:
         return self._duplicate_count
 
     def column_names_to_value_maps(self) -> Generator[Dict[str, str], None, None]:
-        log.info('processing IMDb dataset file "%s"', self.gzipped_tsv_path)
+        log.info('  reading IMDb dataset file "%s"', self.gzipped_tsv_path)
         with gzip.open(self.gzipped_tsv_path, "rt", encoding="utf-8", newline="") as tsv_file:
             last_progress_time = time.time()
             last_progress_row_number = None
