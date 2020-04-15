@@ -1,5 +1,8 @@
-import pytest
+# Copyright (c) 2020, Thomas Aglassinger.
+# All rights reserved. Distributed under the BSD License.
 from functools import lru_cache
+
+import pytest
 from sqlalchemy.sql import select
 
 from pimdb.database import Database, ReportTable, engined

@@ -1,3 +1,5 @@
+# Copyright (c) 2020, Thomas Aglassinger.
+# All rights reserved. Distributed under the BSD License.
 import argparse
 import logging
 import os

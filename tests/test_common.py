@@ -1,3 +1,5 @@
+# Copyright (c) 2020, Thomas Aglassinger.
+# All rights reserved. Distributed under the BSD License.
 import gzip
 
 from pimdb.common import camelized_dot_name, TsvDictWriter, GzippedTsvReader
