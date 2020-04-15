@@ -304,15 +304,14 @@ class TableBuildStatus:
         self._table = table
         log.info("building table %s", table.name)
         self._time = None
-        self.set_time()
+        self.reset_time()
 
-    def set_time(self):
+    def reset_time(self):
         self._time = time.time()
 
     def clear_table(self):
         self._connection.execute(self._table.delete())
-        self.log_time("cleared table in {duration}")
-        self.set_time()
+        self.reset_time()
 
     def log_time(self, message_template: str, count: Optional[int] = None):
         duration_in_seconds = time.time() - self._time
