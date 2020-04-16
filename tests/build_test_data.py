@@ -71,12 +71,14 @@ def _log_progress(processed_count, _):
 
 
 def extracted_tconsts(
-    gzipped_tsv_folder: str, result_column_name: str, filtered_column_name: str, filtered_values: Set[str]
+    gzipped_tsv_folder: str,
+    dataset: ImdbDataset,
+    result_column_name: str,
+    filtered_column_name: str,
+    filtered_values: Set[str],
 ) -> Set[str]:
     tsv_reader = gzipped_tsv_reader(
-        gzipped_tsv_folder,
-        ImdbDataset.TITLE_PRINCIPALS,
-        filtered_names_to_values_map={filtered_column_name: filtered_values},
+        gzipped_tsv_folder, dataset, filtered_names_to_values_map={filtered_column_name: filtered_values},
     )
     result = {name_to_value_map[result_column_name] for name_to_value_map in tsv_reader.column_names_to_value_maps()}
     return result
@@ -84,21 +86,29 @@ def extracted_tconsts(
 
 def main(args: Optional[List[str]] = None):
     arguments = _parsed_arguments(args)
-    log.info("collecting tconsts to filter for")
-    tconsts = (
-        extracted_tconsts(arguments.dataset_folder, "tconst", "nconst", TEST_NCONSTS)
+    log.info("collecting principals tconsts to filter for")
+    principal_tconsts = (
+        extracted_tconsts(arguments.dataset_folder, ImdbDataset.TITLE_PRINCIPALS, "tconst", "nconst", TEST_NCONSTS)
         if not arguments.quick
-        else {"tt0468569", "tt0089941", "tt11029976"}
+        else {"tt2535470", "tt3471694", "tt5635850"}
     )
-    log.info("  found %d titles", len(tconsts))
+    log.info("  found %d titles", len(principal_tconsts))
+    log.info("collecting episode tconsts to filter for")
+    episode_tconsts = (
+        extracted_tconsts(arguments.dataset_folder, ImdbDataset.TITLE_EPISODE, "parentTconst", "tconst", TEST_NCONSTS)
+        if not arguments.quick
+        else {"tt3456370"}
+    )
+    log.info("  found %d titles", len(episode_tconsts))
+    tconsts = principal_tconsts | episode_tconsts
     log.info("collecting nconsts to filter for")
     nconsts = (
-        extracted_tconsts(arguments.dataset_folder, "nconst", "tconst", tconsts)
+        extracted_tconsts(arguments.dataset_folder, ImdbDataset.TITLE_PRINCIPALS, "nconst", "tconst", tconsts)
         if not arguments.quick
-        else {"nm0000616", "nm0001173"}
+        else {"nm3658287", "nm3737504", "nm5713118"}
     )
     log.info("  found %d names", len(nconsts))
-    for imdb_dataset in ImdbDataset:  # TODO: Remove: [ImdbDataset.TITLE_PRINCIPALS]:  # TODO: ImdbDataset:
+    for imdb_dataset in ImdbDataset:
         target_path = os.path.join(arguments.target_folder, imdb_dataset.filename[:-3])
         log.info("writing %s", target_path)
         line_count = 0
@@ -112,7 +122,7 @@ def main(args: Optional[List[str]] = None):
                     filtered_name_to_values_map["tconst"] = tconsts
                 if imdb_dataset in [ImdbDataset.NAME_BASICS, ImdbDataset.TITLE_PRINCIPALS]:
                     filtered_name_to_values_map["nconst"] = nconsts
-            reader = gzipped_tsv_reader(arguments.dataset_folder, imdb_dataset, filtered_name_to_values_map,)
+            reader = gzipped_tsv_reader(arguments.dataset_folder, imdb_dataset, filtered_name_to_values_map)
             for name_to_value_map in reader.column_names_to_value_maps():
                 tsv_writer.write(name_to_value_map)
                 line_count += 1

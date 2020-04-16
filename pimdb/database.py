@@ -111,12 +111,21 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
             ],
         ),
         (
+            ImdbDataset.TITLE_EPISODE,
+            [
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("parentTconst", String(_TCONST_LENGTH), nullable=False),
+                Column("seasonNumber", Integer),
+                Column("episodeNumber", Integer),
+            ],
+        ),
+        (
             ImdbDataset.TITLE_PRINCIPALS,
             [
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("ordering", Integer, nullable=False, primary_key=True),
-                Column("nconst", String(_NCONST_LENGTH)),
-                Column("category", String(_PROFESSION_LENGTH)),
+                Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False),
+                Column("category", String(_PROFESSION_LENGTH), nullable=False),
                 Column("job", String(_JOB_LENGTH)),
                 Column("characters", String(_CHARACTERS_LENGTH)),
             ],
@@ -185,6 +194,15 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]
                 Column("ordering", Integer, nullable=False),
                 Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
                 Index("index__name__characters__ordering", "characters", "ordering", unique=True),
+            ],
+        ),
+        (
+            ReportTable.EPISODE,
+            [
+                Column("title_id", Integer, ForeignKey(f"title.id"), nullable=False, primary_key=True),
+                Column("parent_title_id", Integer, ForeignKey(f"title.id"), nullable=False),
+                Column("season", Integer),
+                Column("episode", Integer),
             ],
         ),
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
@@ -430,6 +448,11 @@ class Database:
         if self._nconst_to_name_id_map is None:
             self._nconst_to_name_id_map = self._natural_key_to_id_map(connection, ReportTable.NAME, "nconst")
         return self._nconst_to_name_id_map
+
+    def tconst_to_title_id_map(self, connection: Connection):
+        if self._tconst_to_title_id_map is None:
+            self._tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+        return self._tconst_to_title_id_map
 
     def _natural_key_to_id_map(
         self, connection: Connection, report_table: ReportTable, natural_key_column: str = "name", id_column: str = "id"
@@ -739,7 +762,7 @@ class Database:
                 .where(known_for_titles_column.isnot(None))
             )
             with connection.begin():
-                tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+                tconst_to_title_id_map = self.tconst_to_title_id_map(connection)
                 table_build_status.clear_table()
                 with BulkInsert(connection, name_to_known_for_title_table, self._bulk_size) as bulk_insert:
                     for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
@@ -824,6 +847,42 @@ class Database:
         target_table_count = table_count(connection, target_table)
         if target_table_count == 0:
             log.warning('target table "%s" should contain rows but is empty',)
+
+    def build_episode_table(self, connection: Connection):
+        episode_table = self.report_table_for(ReportTable.EPISODE)
+        with TableBuildStatus(connection, episode_table) as table_build_status:
+            title_for_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_title")
+            title_for_parent_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_parent_title")
+            title_episode_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_EPISODE]
+
+            insert_episode = episode_table.insert().from_select(
+                [
+                    episode_table.c.title_id,
+                    episode_table.c.parent_title_id,
+                    episode_table.c.season,
+                    episode_table.c.episode,
+                ],
+                select(
+                    [
+                        title_for_title_alias.c.id,
+                        title_for_parent_title_alias.c.id,
+                        title_episode_table.c.seasonNumber,
+                        title_episode_table.c.episodeNumber,
+                    ]
+                ).select_from(
+                    title_episode_table.join(
+                        title_for_title_alias, title_for_title_alias.c.tconst == title_episode_table.c.tconst
+                    ).join(
+                        title_for_parent_title_alias,
+                        title_for_parent_title_alias.c.tconst == title_episode_table.c.parentTconst,
+                    )
+                ),
+            )
+
+            with connection.begin():
+                table_build_status.clear_table()
+                connection.execute(insert_episode)
+                table_build_status.log_added_rows(connection)
 
     def build_title_to_genre_table(self, connection: Connection):
         title_to_genre_table = self.report_table_for(ReportTable.TITLE_TO_GENRE)

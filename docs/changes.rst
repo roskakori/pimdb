@@ -3,6 +3,7 @@ Changes
 
 Version 0.2.0, 2020-04-xx
 
+* Added TV episodes (tables ``TitleEpisode`` resp. ``episode``).
 * Cleaned up logging for ``transfer`` and ``build`` to consistently log the
   time and rows per second for each table.
 
