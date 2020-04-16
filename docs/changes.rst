@@ -1,7 +1,17 @@
 Changes
 =======
 
-Version 0.2.0, 2020-04-xx
+Version 0.2.0, 2020-04-16
+
+* Fixed command :command:`build` for PostgreSQL (issue
+  `#25 <https://github.com/roskakori/pimdb/issues/25>`_).:
+
+  * Index names now have at most 63 characters under PostgreSQL. Proper limits
+    should also be in place for MS SQL and Oracle but have yet to be tested.
+    SQLite always worked because it has a very large limit.
+  * The PostgreSQL docker container for the test run now has more shared
+     memory in order to allow "insert ... from select ..." with millions of
+     rows. Performance still has a lot of room for improvement.
 
 * Added TV episodes (tables ``TitleEpisode`` resp. ``episode``).
 * Cleaned up logging for ``transfer`` and ``build`` to consistently log the
