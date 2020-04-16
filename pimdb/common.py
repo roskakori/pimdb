@@ -37,6 +37,7 @@ class ImdbDataset(Enum):
     TITLE_AKAS = "title.akas"
     TITLE_BASICS = "title.basics"
     TITLE_CREW = "title.crew"
+    TITLE_EPISODE = "title.episode"
     TITLE_PRINCIPALS = "title.principals"
     TITLE_RATINGS = "title.ratings"
 
@@ -64,6 +65,7 @@ class ImdbDataset(Enum):
 class ReportTable(Enum):
     CHARACTER = "character"
     CHARACTERS_TO_CHARACTER = "characters_to_character"
+    EPISODE = "episode"
     GENRE = "genre"
     NAME = "name"
     NAME_TO_KNOWN_FOR_TITLE = "name_to_known_for_title"
@@ -86,11 +88,12 @@ IMDB_DATASET_TO_KEY_COLUMNS_MAP = {
     ImdbDataset.NAME_BASICS: ["nconst"],
     ImdbDataset.TITLE_AKAS: ["titleId", "ordering"],
     ImdbDataset.TITLE_BASICS: ["tconst"],
+    ImdbDataset.TITLE_EPISODE: ["tconst"],
     ImdbDataset.TITLE_CREW: ["tconst"],
     ImdbDataset.TITLE_PRINCIPALS: ["nconst", "tconst"],
     ImdbDataset.TITLE_RATINGS: ["tconst"],
 }
-
+assert len(IMDB_DATASET_NAMES) == len(IMDB_DATASET_TO_KEY_COLUMNS_MAP)
 
 _DOWNLOAD_BUFFER_SIZE = 8192
 

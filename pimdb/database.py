@@ -60,6 +60,30 @@ _ALIAS_TYPES_LENGTH = 128
 _TITLE_TYPE_LENGTH = 24  # current maximum: 12
 
 
+class NamePool:
+    def __init__(self, max_length: int):
+        self.max_length = max_length
+        self._parts_to_name_map = {}
+        self._shortened_count = 0
+
+    def name(self, raw_name: str) -> str:
+        result = self._parts_to_name_map.get(raw_name)
+        if result is None:
+            result = raw_name
+            if len(result) > self.max_length:
+                preferred_name = result
+                is_unique_new_name = False
+                while not is_unique_new_name:
+                    self._shortened_count += 1
+                    short_text = f"_{self._shortened_count}"
+                    result = result[: self.max_length][: -len(short_text)] + short_text
+                    if result not in self._parts_to_name_map.values():
+                        is_unique_new_name = True
+                log.info("  shortened name: %s -> %s", preferred_name, result)
+            self._parts_to_name_map[raw_name] = result
+        return result
+
+
 def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
     """SQL tables that represent a direct copy of a TSV file (excluding duplicates)"""
     return [
@@ -111,12 +135,21 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
             ],
         ),
         (
+            ImdbDataset.TITLE_EPISODE,
+            [
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
+                Column("parentTconst", String(_TCONST_LENGTH), nullable=False),
+                Column("seasonNumber", Integer),
+                Column("episodeNumber", Integer),
+            ],
+        ),
+        (
             ImdbDataset.TITLE_PRINCIPALS,
             [
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("ordering", Integer, nullable=False, primary_key=True),
-                Column("nconst", String(_NCONST_LENGTH)),
-                Column("category", String(_PROFESSION_LENGTH)),
+                Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False),
+                Column("category", String(_PROFESSION_LENGTH), nullable=False),
                 Column("job", String(_JOB_LENGTH)),
                 Column("characters", String(_CHARACTERS_LENGTH)),
             ],
@@ -138,14 +171,13 @@ def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[Report
         report_table,
         [
             Column("id", Integer, nullable=False, primary_key=True),
-            Column("name", String(name_length), nullable=False),
-            Index(f"index__{report_table.value}__name", "name", unique=True),
+            Column("name", String(name_length), index=True, nullable=False, unique=True),
         ],
     )
 
 
 def _ordered_relation_table_info(
-    table_to_create: ReportTable, from_table: ReportTable, to_table: ReportTable
+    index_name_pool: NamePool, table_to_create: ReportTable, from_table: ReportTable, to_table: ReportTable
 ) -> Tuple[ReportTable, List[Union[Column, Index]]]:
     """
     Information required to create a table representing an ordered relation
@@ -165,17 +197,17 @@ def _ordered_relation_table_info(
             Column("ordering", Integer, nullable=False),
             Column(f"{to_table_name}_id", Integer, ForeignKey(f"{to_table_name}.id"), nullable=False),
             Index(
-                f"index__{report_table_name}__{from_table_name}_id__ordering",
+                index_name_pool.name(f"index__{report_table_name}__{from_table_name}_id__ordering"),
                 f"{from_table_name}_id",
                 "ordering",
                 unique=True,
             ),
-            Index(f"index__{report_table_name}__{to_table_name}_id", f"{to_table_name}_id"),
+            Index(index_name_pool.name(f"index__{report_table_name}__{to_table_name}_id"), f"{to_table_name}_id"),
         ],
     )
 
 
-def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]:
+def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, List[Union[Column, Index]]]]:
     return [
         _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
         (
@@ -184,46 +216,60 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]
                 Column(f"characters", String(_CHARACTERS_LENGTH), nullable=False),
                 Column("ordering", Integer, nullable=False),
                 Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
-                Index("index__name__characters__ordering", "characters", "ordering", unique=True),
+                Index(index_name_pool.name("index__name__characters__ordering"), "characters", "ordering", unique=True),
+            ],
+        ),
+        (
+            ReportTable.EPISODE,
+            [
+                Column("title_id", Integer, ForeignKey(f"title.id"), nullable=False, primary_key=True),
+                Column("parent_title_id", Integer, ForeignKey(f"title.id"), nullable=False),
+                Column("season", Integer),
+                Column("episode", Integer),
             ],
         ),
         _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
         _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
-        _key_table_info(ReportTable.TITLE_TYPE, _ALIAS_TYPE_LENGTH),
+        _key_table_info(ReportTable.TITLE_TYPE, _TITLE_TYPE_LENGTH),
         (
             ReportTable.NAME,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
-                Column("nconst", String(_NCONST_LENGTH), nullable=False, unique=True),
+                Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False, unique=True),
                 Column("primary_name", String(_TITLE_LENGTH), nullable=False),
                 Column("birth_year", Integer),
                 Column("death_year", Integer),
                 Column("primary_professions", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
-                Index("index__name__nconst", "nconst", unique=True),
             ],
         ),
-        _ordered_relation_table_info(ReportTable.NAME_TO_KNOWN_FOR_TITLE, ReportTable.NAME, ReportTable.TITLE),
+        _ordered_relation_table_info(
+            index_name_pool, ReportTable.NAME_TO_KNOWN_FOR_TITLE, ReportTable.NAME, ReportTable.TITLE
+        ),
         (
             ReportTable.PARTICIPATION,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("ordering", Integer, nullable=False),
-                Column("name_id", Integer, ForeignKey("name.id"), nullable=False),
+                Column("name_id", Integer, ForeignKey("name.id"), index=True, nullable=False),
                 Column("profession_id", Integer, ForeignKey("profession.id")),
                 Column("job", String(_JOB_LENGTH)),
-                Index("index__participation__title_id__ordering", "title_id", "ordering", unique=True),
-                Index("index__participation__name_id", "name_id"),
+                Index(
+                    index_name_pool.name("index__participation__title_id__ordering"),
+                    "title_id",
+                    "ordering",
+                    unique=True,
+                ),
             ],
         ),
         _ordered_relation_table_info(
-            ReportTable.PARTICIPATION_TO_CHARACTER, ReportTable.PARTICIPATION, ReportTable.CHARACTER
+            index_name_pool, ReportTable.PARTICIPATION_TO_CHARACTER, ReportTable.PARTICIPATION, ReportTable.CHARACTER
         ),
         (
             ReportTable.TITLE,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
-                Column("tconst", String(_TCONST_LENGTH), nullable=False, unique=True),
+                Column("tconst", String(_TCONST_LENGTH), index=True, nullable=False, unique=True),
                 Column("title_type_id", Integer, ForeignKey("title_type.id"), nullable=False),
                 Column("primary_title", String(_TITLE_LENGTH), nullable=False),
                 Column("original_title", String(_TITLE_LENGTH), nullable=False),
@@ -233,7 +279,6 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]
                 Column("runtime_minutes", Integer),
                 Column("average_rating", Float, default=0.0, nullable=False),
                 Column("rating_count", Integer, default=0, nullable=False),
-                Index("index__title__tconst", "tconst", unique=True),
             ],
         ),
         (
@@ -247,16 +292,23 @@ def report_table_infos() -> List[Tuple[ReportTable, List[Union[Column, Index]]]]
                 Column("language_code", String(_LANGUAGE_LENGTH)),
                 # NOTE: is_original_title sometimes actually is null.
                 Column("is_original_title", Boolean),
-                Index("index__title_alias__title_id__ordering", "title_id", "ordering", unique=True),
+                Index(
+                    index_name_pool.name("index__title_alias__title_id__ordering"), "title_id", "ordering", unique=True
+                ),
             ],
         ),
         _ordered_relation_table_info(
-            ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE, ReportTable.TITLE_ALIAS, ReportTable.TITLE_ALIAS_TYPE
+            index_name_pool,
+            ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE,
+            ReportTable.TITLE_ALIAS,
+            ReportTable.TITLE_ALIAS_TYPE,
         ),
         _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
-        _ordered_relation_table_info(ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME),
-        _ordered_relation_table_info(ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
-        _ordered_relation_table_info(ReportTable.TITLE_TO_WRITER, ReportTable.TITLE, ReportTable.NAME),
+        _ordered_relation_table_info(
+            index_name_pool, ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME
+        ),
+        _ordered_relation_table_info(index_name_pool, ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
+        _ordered_relation_table_info(index_name_pool, ReportTable.TITLE_TO_WRITER, ReportTable.TITLE, ReportTable.NAME),
     ]
 
 
@@ -388,19 +440,52 @@ def engined(engine_info_or_path: str) -> str:
     return engine_info_or_path if "://" in engine_info_or_path else f"sqlite:///{engine_info_or_path}"
 
 
+def max_name_length(engine_info: str) -> int:
+    """
+    Maximum length of a name in the database. This can be used to for example
+    limit generated index names to a valid length.
+    :param engine_info:
+    :return:
+    """
+    # NOTE: Actually many of these limits depend on (compile time) parameters
+    #   but as there does not seem to be an easy way to query them we use the
+    #   defaults.
+    # TODO: For some databases the length can be queried programmatically, so we might just do that here.
+    prefix_to_max_length = {
+        # See https://docs.microsoft.com/en-us/sql/sql-server/maximum-capacity-specifications-for-sql-server
+        "mssql": 128,
+        # See https://dev.mysql.com/doc/refman/8.0/en/identifier-length.html
+        "mysql": 64,
+        # Actually 128 starting with Oracle 12, see: https://oracle-base.com/articles/12c/long-identifiers-12cr2
+        "oracle": 30,
+        # See: https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+        "postgres": 63,
+        # Actually no limit except the maximum length of SQL statements, see https://www.sqlite.org/limits.html
+        "sqlite": 128,
+    }
+    default_max_length = min(prefix_to_max_length.values())
+    return next(
+        (length for prefix, length in prefix_to_max_length.items() if engine_info.startswith(prefix)),
+        default_max_length,
+    )
+
+
 class Database:
     def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE, has_to_drop_tables: bool = False):
         # FIXME: Remove possible username and pass word from logged engine info.
         actual_engine_info = engined(engine_info)
         log.info("connecting to database %s", actual_engine_info)
         self._engine = create_engine(actual_engine_info)
+        self._engine_name = actual_engine_info.split(":")[0]
         self._bulk_size = bulk_size
         self._has_to_drop_tables = has_to_drop_tables
         self._metadata = MetaData(self._engine)
         self._imdb_dataset_to_table_map = None
         self._report_name_to_table_map = {}
         self._nconst_to_name_id_map = None
+        self._tconst_to_title_id_map = None
 
+        self._normalized_index_name_pool = NamePool(max_name_length(actual_engine_info))
         #: Remembers title_alias_types that have yet to be added to IMDB_TITLE_ALIAS_TYPES.
         self._unknown_title_alias_types = None
 
@@ -430,6 +515,11 @@ class Database:
         if self._nconst_to_name_id_map is None:
             self._nconst_to_name_id_map = self._natural_key_to_id_map(connection, ReportTable.NAME, "nconst")
         return self._nconst_to_name_id_map
+
+    def tconst_to_title_id_map(self, connection: Connection):
+        if self._tconst_to_title_id_map is None:
+            self._tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+        return self._tconst_to_title_id_map
 
     def _natural_key_to_id_map(
         self, connection: Connection, report_table: ReportTable, natural_key_column: str = "name", id_column: str = "id"
@@ -488,7 +578,7 @@ class Database:
 
     def create_report_tables(self):
         log.info("creating report tables")
-        for report_table, options in report_table_infos():
+        for report_table, options in report_table_infos(self._normalized_index_name_pool):
             try:
                 self._report_name_to_table_map[report_table] = Table(report_table.value, self.metadata, *options)
             except SQLAlchemyError as error:
@@ -532,7 +622,7 @@ class Database:
         with TableBuildStatus(connection, table_to_build) as table_build_status:
             table_build_status.clear_table()
             self._build_key_table_from_values(connection, table_to_build, values)
-            table_build_status.log_added_rows()
+            table_build_status.log_added_rows(connection)
 
     def _build_key_table_from_values(self, connection: Connection, table_to_build: Table, values: Sequence[str]):
         with BulkInsert(connection, table_to_build, self._bulk_size) as bulk_insert:
@@ -739,7 +829,7 @@ class Database:
                 .where(known_for_titles_column.isnot(None))
             )
             with connection.begin():
-                tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+                tconst_to_title_id_map = self.tconst_to_title_id_map(connection)
                 table_build_status.clear_table()
                 with BulkInsert(connection, name_to_known_for_title_table, self._bulk_size) as bulk_insert:
                     for name_id, nconst, known_for_titles_tconsts in connection.execute(select_known_for_title_tconsts):
@@ -824,6 +914,42 @@ class Database:
         target_table_count = table_count(connection, target_table)
         if target_table_count == 0:
             log.warning('target table "%s" should contain rows but is empty',)
+
+    def build_episode_table(self, connection: Connection):
+        episode_table = self.report_table_for(ReportTable.EPISODE)
+        with TableBuildStatus(connection, episode_table) as table_build_status:
+            title_for_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_title")
+            title_for_parent_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_parent_title")
+            title_episode_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_EPISODE]
+
+            insert_episode = episode_table.insert().from_select(
+                [
+                    episode_table.c.title_id,
+                    episode_table.c.parent_title_id,
+                    episode_table.c.season,
+                    episode_table.c.episode,
+                ],
+                select(
+                    [
+                        title_for_title_alias.c.id,
+                        title_for_parent_title_alias.c.id,
+                        title_episode_table.c.seasonNumber,
+                        title_episode_table.c.episodeNumber,
+                    ]
+                ).select_from(
+                    title_episode_table.join(
+                        title_for_title_alias, title_for_title_alias.c.tconst == title_episode_table.c.tconst
+                    ).join(
+                        title_for_parent_title_alias,
+                        title_for_parent_title_alias.c.tconst == title_episode_table.c.parentTconst,
+                    )
+                ),
+            )
+
+            with connection.begin():
+                table_build_status.clear_table()
+                connection.execute(insert_episode)
+                table_build_status.log_added_rows(connection)
 
     def build_title_to_genre_table(self, connection: Connection):
         title_to_genre_table = self.report_table_for(ReportTable.TITLE_TO_GENRE)
@@ -946,6 +1072,7 @@ class Database:
                 self.check_table_has_data(connection, title_alias_table)
 
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
+        # TODO: Improve performance by using helper table similar to character_to_character.
         title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
         with TableBuildStatus(connection, title_alias_to_title_alias_type_table) as table_build_status:
             title_table = self.report_table_for(ReportTable.TITLE)

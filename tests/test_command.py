@@ -6,16 +6,7 @@ import pytest
 
 from pimdb.command import ImdbDataset
 from pimdb.command import exit_code_for, CommandName
-from tests._common import gzipped_tests_data_path, output_path, sqlite_engine, TESTS_DATA_PATH
-
-
-@pytest.fixture
-def gzip_tsv_files():
-    """
-    Ensure that the gzipped TSV files have been generated in ``TESTS_DATA_PATH``.
-    """
-    for imdb_dataset in ImdbDataset:
-        gzipped_tests_data_path(imdb_dataset)
+from tests._common import output_path, sqlite_engine, TESTS_DATA_PATH
 
 
 def test_can_show_help():
