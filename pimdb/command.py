@@ -12,7 +12,8 @@ from sqlalchemy.engine import Connection
 
 from pimdb import __version__
 from pimdb.common import download_imdb_dataset, log, ImdbDataset, IMDB_DATASET_NAMES, PimdbError
-from pimdb.database import Database, DEFAULT_BULK_SIZE
+from pimdb.database import Database
+from pimdb.bulk import DEFAULT_BULK_SIZE
 
 _DEFAULT_DATABASE = "sqlite:///pimdb.db"
 _DEFAULT_LOG_LEVEL = "info"

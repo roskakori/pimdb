@@ -4,6 +4,12 @@ Setup for pimdb.
 Developer cheat sheet
 ---------------------
 
+Build and check the wheel::
+
+  $ rm dist/*.whl
+  $ python3 setup.py bdist_wheel
+  $ twine check dist/*.whl
+
 Tag a release (simply replace ``0.x.x`` with the current version number)::
 
   $ git tag -a -m "Tagged version 0.x.x." v0.x.x
@@ -11,8 +17,6 @@ Tag a release (simply replace ``0.x.x`` with the current version number)::
 
 Upload release to PyPI::
 
-  $ python3 setup.py bdist_wheel
-  $ twine check dist/*.whl
   $ twine upload --config-file ~/.pypyrc dist/*.whl
 """
 # Copyright (c) 2020, Thomas Aglassinger.

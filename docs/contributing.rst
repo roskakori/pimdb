@@ -51,6 +51,16 @@ To build and browse the coverage report in HTML format:
     $ pytest --cov-report=html
     $ open htmlcov/index.html  # macOS only
 
+.. envvar:: PIMDB_TEST_DATABASE
+
+By default, all database related tests run on SQLite. Some tests can run on
+different databases in order to test that everything works across a wide
+range. To use a specific database, set the respective engine in the
+environment variable :envvar:`PIMDB_TEST_DATABASE`. For example:
+
+.. code-block:: bash
+
+    export PIMDB_TEST_DATABASE="postgresql+psycopg2://postgres@localhost:5439/pimdb_test"
 
 .. _test-run-with-postgres:
 
@@ -72,6 +82,10 @@ PostgreSQL database in a docker container:
    .. code-block:: bash
 
         docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb"
+
+   If you want a separate database for the unit tests:
+
+        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb_test"
 
 4. Run :command:`pimdb`:
 

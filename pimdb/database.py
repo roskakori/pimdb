@@ -1,10 +1,12 @@
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
 import functools
+import gzip
 import json
 import os
 import time
-from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable, Any
+from enum import Enum
+from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable
 
 from sqlalchemy import (
     Column,
@@ -26,10 +28,9 @@ from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import coalesce
 from sqlalchemy.sql.selectable import SelectBase
 
+from pimdb.bulk import DEFAULT_BULK_SIZE, BulkInsert, PostgresBulkLoad
 from pimdb.common import log, ImdbDataset, PimdbError, ReportTable, GzippedTsvReader, IMDB_DATASET_NAMES
 
-#: Default number of bulk data (for e.g. SQL insert) to be collected in memory before they are sent to the database.
-DEFAULT_BULK_SIZE = 1024
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
@@ -82,6 +83,26 @@ class NamePool:
                 log.info("  shortened name: %s -> %s", preferred_name, result)
             self._parts_to_name_map[raw_name] = result
         return result
+
+
+class DatabaseSystem(Enum):
+    """
+    The underlying database system for a SQLAlchemy engine in order to decide
+    how to best optimize bulk operations.
+    """
+
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
+    OTHER = "other"
+
+
+def database_system_from_engine_info(engine_info: str) -> DatabaseSystem:
+    if engine_info.startswith("sqlite:///"):
+        return DatabaseSystem.SQLITE
+    elif engine_info.startswith("postgresql://") or engine_info.startswith("postgresql+psycopg2://"):
+        return DatabaseSystem.POSTGRES
+    else:
+        return DatabaseSystem.OTHER
 
 
 def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
@@ -396,46 +417,6 @@ def table_count(connection: Connection, table: Table) -> int:
     return result
 
 
-class BulkInsert:
-    def __init__(self, connection: Connection, table: Table, bulk_size: int = DEFAULT_BULK_SIZE):
-        assert bulk_size >= 1
-        self._connection = connection
-        self._table = table
-        self._bulk_size = bulk_size
-        self._data = []
-        self._count = 0
-
-    def add(self, data: Dict[str, Optional[Any]]):
-        self._data.append(data)
-        self._count += 1
-        if len(self._data) >= self._bulk_size:
-            self._flush()
-
-    def _flush(self):
-        data_count = len(self._data)
-        assert data_count >= 1
-        log.debug("    inserting %d data to %s", data_count, self._table.name)
-        insert = self._table.insert(self._data)
-        self._connection.execute(insert)
-        self._data.clear()
-
-    @property
-    def count(self):
-        return self._count
-
-    def close(self):
-        if len(self._data) >= 1:
-            self._flush()
-        self._data = None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, error_type, error_value, error_traceback):
-        if not error_type:
-            self.close()
-
-
 def engined(engine_info_or_path: str) -> str:
     return engine_info_or_path if "://" in engine_info_or_path else f"sqlite:///{engine_info_or_path}"
 
@@ -474,7 +455,8 @@ class Database:
     def __init__(self, engine_info: str, bulk_size: int = DEFAULT_BULK_SIZE, has_to_drop_tables: bool = False):
         # FIXME: Remove possible username and pass word from logged engine info.
         actual_engine_info = engined(engine_info)
-        log.info("connecting to database %s", actual_engine_info)
+        self._database_system = database_system_from_engine_info(actual_engine_info)
+        log.info("connecting to database %s (%s)", actual_engine_info, self._database_system.value)
         self._engine = create_engine(actual_engine_info)
         self._engine_name = actual_engine_info.split(":")[0]
         self._bulk_size = bulk_size
@@ -558,23 +540,36 @@ class Database:
     ):
         imdb_dataset = ImdbDataset(imdb_dataset_name)
         table_to_modify = self.imdb_dataset_to_table_map[imdb_dataset]
-        with connection.begin():
-            with TableBuildStatus(connection, table_to_modify) as table_build_status:
-                table_build_status.clear_table()
+        gzipped_tsv_path = os.path.join(dataset_folder, imdb_dataset.filename)
+        has_been_inserted_quickly = False
+        if self._database_system == DatabaseSystem.POSTGRES:
+            try:
+                with TableBuildStatus(connection, table_to_modify) as table_build_status:
+                    with gzip.open(gzipped_tsv_path, "rb") as gzipped_tsv_file:
+                        with PostgresBulkLoad(self._engine) as bulk_load:
+                            bulk_load.load(table_to_modify, gzipped_tsv_file)
+                    table_build_status.log_added_rows(connection)
+                    has_been_inserted_quickly = True
+            except Exception as error:
+                log.warning("cannot quickly insert data, reverting to slower variant (reason: %s)", error)
 
-                # Insert all rows from TSV.
-                key_columns = self.key_columns(imdb_dataset)
-                gzipped_tsv_path = os.path.join(dataset_folder, imdb_dataset.filename)
-                gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
-                with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
-                    for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
-                        try:
-                            bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
-                        except PimdbError as error:
-                            raise PimdbError(
-                                f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
-                            )
-                    table_build_status.log_added_rows(bulk_insert._count)
+        if not has_been_inserted_quickly:
+            with connection.begin():
+                with TableBuildStatus(connection, table_to_modify) as table_build_status:
+                    table_build_status.clear_table()
+
+                    # Insert all rows from TSV.
+                    key_columns = self.key_columns(imdb_dataset)
+                    gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
+                    with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
+                        for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
+                            try:
+                                bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
+                            except PimdbError as error:
+                                raise PimdbError(
+                                    f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
+                                )
+                        table_build_status.log_added_rows(bulk_insert._count)
 
     def create_report_tables(self):
         log.info("creating report tables")

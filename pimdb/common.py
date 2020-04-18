@@ -42,6 +42,16 @@ class ImdbDataset(Enum):
     TITLE_RATINGS = "title.ratings"
 
     @property
+    def tsv_filename(self):
+        """
+        The uncompressed file name mostly used for testing, for example:
+
+        >>> ImdbDataset("name.basics").tsv_filename
+        'name.basics.tsv'
+        """
+        return f"{self.value}.tsv"
+
+    @property
     def filename(self):
         """
         The compressed file name for the URL, for example:

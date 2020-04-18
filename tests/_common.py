@@ -4,9 +4,11 @@
 import gzip
 import logging
 import os
+from functools import lru_cache
 from typing import Callable
 
 from pimdb.command import ImdbDataset
+from pimdb.database import Database
 
 TESTS_DATA_PATH = os.path.join(os.path.dirname(__file__), "data")
 TESTS_OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "output")
@@ -18,6 +20,16 @@ def output_path(name):
     result = os.path.join(TESTS_OUTPUT_PATH, name)
     os.makedirs(os.path.dirname(result), exist_ok=True)
     return result
+
+
+#: Database engine to use for tests that do not have any special requirements
+#: concerning the database. By default this will use SQLite but you can
+#: override this using the environment variable :envvar:`PIMDB_TEST_DATABASE`.
+DEFAULT_TEST_ENGINE = os.environ.get("PIMDB_TEST_DATABASE", "sqlite:///" + output_path("pimdb_test.db"))
+
+
+#: True if :data:`DEFAULT_TEST_ENGINE` is a PostgreSQL database.
+IS_POSTGRES_DEFAULT_TEST_ENGINE = DEFAULT_TEST_ENGINE.startswith("postgres")
 
 
 def sqlite_engine(test_function: Callable) -> str:
@@ -45,3 +57,11 @@ def gzipped_tests_data_path(dataset: ImdbDataset) -> str:
                 # but would be evil in a production environment.
                 target_tsv_gz_file.write(source_tsv_file.read())
     return tsv_gz_path
+
+
+@lru_cache(maxsize=1)
+def create_database_with_tables(engine_info: str) -> Database:
+    result = Database(engine_info, has_to_drop_tables=True)
+    result.create_imdb_dataset_tables()
+    result.create_report_tables()
+    return result
