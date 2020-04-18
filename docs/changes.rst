@@ -1,6 +1,11 @@
 Changes
 =======
 
+Version 0.2.1, 2020-04-18
+
+* Improved performance of command :command:`build` for PostgreSQL by changing
+  bulk ``insert`` to ``copy from``.
+
 Version 0.2.0, 2020-04-16
 
 * Fixed command :command:`build` for PostgreSQL (issue
@@ -10,8 +15,8 @@ Version 0.2.0, 2020-04-16
     should also be in place for MS SQL and Oracle but have yet to be tested.
     SQLite always worked because it has a very large limit.
   * The PostgreSQL docker container for the test run now has more shared
-     memory in order to allow "insert ... from select ..." with millions of
-     rows. Performance still has a lot of room for improvement.
+    memory in order to allow "insert ... from select ..." with millions of
+    rows. Performance still has a lot of room for improvement.
 
 * Added TV episodes (tables ``TitleEpisode`` resp. ``episode``).
 * Cleaned up logging for ``transfer`` and ``build`` to consistently log the
