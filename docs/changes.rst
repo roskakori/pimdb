@@ -1,6 +1,11 @@
 Changes
 =======
 
+Version 0.2.1, 2020-04-xx
+
+* Fixed :py:exc:`AssertionError` when command line option ``--bulk`` was less
+  than 1.
+
 Version 0.2.1, 2020-04-18
 
 * Improved performance of command :command:`build` for PostgreSQL by changing

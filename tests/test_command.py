@@ -42,6 +42,12 @@ def test_can_query_dataset(gzip_tsv_files):
     assert exit_code == 0
 
 
+def test_fails_on_too_small_bulk_size():
+    with pytest.raises(SystemExit) as system_exit:
+        exit_code_for([CommandName.TRANSFER.value, "--bulk", "0", "title.ratings"])
+        assert system_exit.code == 1
+
+
 @pytest.mark.skip("see FIXME comment for details")
 def test_can_download_title_ratings():
     # FIXME This test has several issues that should be addressed by mocking the download:

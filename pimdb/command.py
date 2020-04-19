@@ -137,6 +137,18 @@ def _parser() -> argparse.ArgumentParser:
     return result
 
 
+def _check_bulk_size(parser: argparse.ArgumentParser, parsed_arguments: argparse.Namespace):
+    min_bulk_size = 1
+    try:
+        bulk_size = getattr(parsed_arguments, "bulk_size")
+    except AttributeError:
+        # No argument "--bulk" to check, just move on.
+        pass
+    else:
+        if bulk_size < min_bulk_size:
+            parser.error(f"--bulk is {bulk_size} but must be at least {min_bulk_size}")
+
+
 class _DownloadCommand:
     def __init__(self, parser: argparse.ArgumentParser, args: argparse.Namespace):
         self._imdb_datasets = _checked_imdb_dataset_names(parser, args)
@@ -249,6 +261,7 @@ def exit_code_for(arguments: Optional[List[str]] = None) -> int:
     try:
         parser = _parser()
         args = parser.parse_args(arguments)
+        _check_bulk_size(parser, args)
 
         pimdb_log_level = logging.getLevelName(args.log.upper()) if args.log != "sql" else logging.DEBUG
         log.setLevel(pimdb_log_level)
