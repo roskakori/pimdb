@@ -5,6 +5,8 @@ Version 0.2.1, 2020-04-xx
 
 * Fixed :py:exc:`AssertionError` when command line option ``--bulk`` was less
   than 1.
+* Added documentation chapter explaining the :doc:`datamodel` including
+  example SQL queries and overview ER diagrams.
 
 Version 0.2.1, 2020-04-18
 

@@ -71,6 +71,21 @@ example the freely available and platform independent community edition of
 [DBeaver](https://dbeaver.io/) or the
 [command line shell for SQLite](https://sqlite.org/cli.html).
 
+For simple queries you can also use `pimdb` and look at the result as
+UTF-8 encoded TSV. For example, here are the details of the top 10 oldest
+people alive according to IMDb:
+
+```bash
+pimdb query "select * from NameBasics where birthYear is not null and deathYear is null order by birthYear limit 10" >oldest_people_alive.tsv
+```
+
+You can also run an SQL statement stored in a file:
+
+```bash
+pimdb query --file some.sql
+```
+
+
 ### Building normalized tables
 
 The tables so far are almost verbatim copies of the IMDb datasets with the
@@ -121,10 +136,14 @@ where
     name.primary_name = 'Alan Smithee'
 ```
 
+For more information on which tables are available on how they are related
+read the chapter about the
+[pimdb data model](https://pimdb.readthedocs.io/en/latest/datamodel.html).
+
 
 ## Reference
 
-To get an overview of general command line option and available commands run:
+To get an overview of general command line options and available commands run:
 
 ```bash
 pimdb --help
