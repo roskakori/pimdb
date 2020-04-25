@@ -1,12 +1,14 @@
 Changes
 =======
 
-Version 0.2.1, 2020-04-xx
+Version 0.2.2, 2020-04-25
 
 * Fixed :py:exc:`AssertionError` when command line option ``--bulk`` was less
   than 1.
 * Added documentation chapter explaining the :doc:`datamodel` including
   example SQL queries and overview ER diagrams.
+* Added automatic removal of temporary tables only needed to build the
+  normalized tables.
 
 Version 0.2.1, 2020-04-18
 

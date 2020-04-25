@@ -72,9 +72,9 @@ class ImdbDataset(Enum):
         return camelized_dot_name(self.value)
 
 
-class ReportTable(Enum):
+class NormalizedTableKey(Enum):
     CHARACTER = "character"
-    CHARACTERS_TO_CHARACTER = "characters_to_character"
+    TEMP_CHARACTERS_TO_CHARACTER = "characters_to_character"
     EPISODE = "episode"
     GENRE = "genre"
     NAME = "name"

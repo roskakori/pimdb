@@ -29,7 +29,7 @@ from sqlalchemy.sql.functions import coalesce
 from sqlalchemy.sql.selectable import SelectBase
 
 from pimdb.bulk import DEFAULT_BULK_SIZE, BulkInsert, PostgresBulkLoad
-from pimdb.common import log, ImdbDataset, PimdbError, ReportTable, GzippedTsvReader, IMDB_DATASET_NAMES
+from pimdb.common import log, ImdbDataset, PimdbError, NormalizedTableKey, GzippedTsvReader, IMDB_DATASET_NAMES
 
 
 _TCONST_LENGTH = 12  # current maximum: 10
@@ -186,10 +186,12 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
     ]
 
 
-def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[ReportTable, List[Union[Column, Index]]]:
-    assert isinstance(report_table, ReportTable)
+def _key_table_info(
+    normalized_table_key: NormalizedTableKey, name_length: int
+) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
+    assert isinstance(normalized_table_key, NormalizedTableKey)
     return (
-        report_table,
+        normalized_table_key,
         [
             Column("id", Integer, nullable=False, primary_key=True),
             Column("name", String(name_length), index=True, nullable=False, unique=True),
@@ -198,16 +200,19 @@ def _key_table_info(report_table: ReportTable, name_length: int) -> Tuple[Report
 
 
 def _ordered_relation_table_info(
-    index_name_pool: NamePool, table_to_create: ReportTable, from_table: ReportTable, to_table: ReportTable
-) -> Tuple[ReportTable, List[Union[Column, Index]]]:
+    index_name_pool: NamePool,
+    table_to_create: NormalizedTableKey,
+    from_table: NormalizedTableKey,
+    to_table: NormalizedTableKey,
+) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
     """
     Information required to create a table representing an ordered relation
     pointing from ``from_table`` to ``to_table``, including the necessary
     indexes and constraints.
     """
-    assert isinstance(table_to_create, ReportTable)
-    assert isinstance(from_table, ReportTable)
-    assert isinstance(to_table, ReportTable)
+    assert isinstance(table_to_create, NormalizedTableKey)
+    assert isinstance(from_table, NormalizedTableKey)
+    assert isinstance(to_table, NormalizedTableKey)
     report_table_name = table_to_create.value
     from_table_name = from_table.value
     to_table_name = to_table.value
@@ -228,20 +233,11 @@ def _ordered_relation_table_info(
     )
 
 
-def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, List[Union[Column, Index]]]]:
+def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableKey, List[Union[Column, Index]]]]:
     return [
-        _key_table_info(ReportTable.CHARACTER, _CHARACTER_LENGTH),
+        _key_table_info(NormalizedTableKey.CHARACTER, _CHARACTER_LENGTH),
         (
-            ReportTable.CHARACTERS_TO_CHARACTER,
-            [
-                Column(f"characters", String(_CHARACTERS_LENGTH), nullable=False),
-                Column("ordering", Integer, nullable=False),
-                Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
-                Index(index_name_pool.name("index__name__characters__ordering"), "characters", "ordering", unique=True),
-            ],
-        ),
-        (
-            ReportTable.EPISODE,
+            NormalizedTableKey.EPISODE,
             [
                 Column("title_id", Integer, ForeignKey(f"title.id"), nullable=False, primary_key=True),
                 Column("parent_title_id", Integer, ForeignKey(f"title.id"), nullable=False),
@@ -249,11 +245,11 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, Lis
                 Column("episode", Integer),
             ],
         ),
-        _key_table_info(ReportTable.GENRE, _GENRE_LENGTH),
-        _key_table_info(ReportTable.PROFESSION, _PROFESSION_LENGTH),
-        _key_table_info(ReportTable.TITLE_TYPE, _TITLE_TYPE_LENGTH),
+        _key_table_info(NormalizedTableKey.GENRE, _GENRE_LENGTH),
+        _key_table_info(NormalizedTableKey.PROFESSION, _PROFESSION_LENGTH),
+        _key_table_info(NormalizedTableKey.TITLE_TYPE, _TITLE_TYPE_LENGTH),
         (
-            ReportTable.NAME,
+            NormalizedTableKey.NAME,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False, unique=True),
@@ -264,10 +260,13 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, Lis
             ],
         ),
         _ordered_relation_table_info(
-            index_name_pool, ReportTable.NAME_TO_KNOWN_FOR_TITLE, ReportTable.NAME, ReportTable.TITLE
+            index_name_pool,
+            NormalizedTableKey.NAME_TO_KNOWN_FOR_TITLE,
+            NormalizedTableKey.NAME,
+            NormalizedTableKey.TITLE,
         ),
         (
-            ReportTable.PARTICIPATION,
+            NormalizedTableKey.PARTICIPATION,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
@@ -284,10 +283,22 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, Lis
             ],
         ),
         _ordered_relation_table_info(
-            index_name_pool, ReportTable.PARTICIPATION_TO_CHARACTER, ReportTable.PARTICIPATION, ReportTable.CHARACTER
+            index_name_pool,
+            NormalizedTableKey.PARTICIPATION_TO_CHARACTER,
+            NormalizedTableKey.PARTICIPATION,
+            NormalizedTableKey.CHARACTER,
         ),
         (
-            ReportTable.TITLE,
+            NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER,
+            [
+                Column(f"characters", String(_CHARACTERS_LENGTH), nullable=False),
+                Column("ordering", Integer, nullable=False),
+                Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
+                Index(index_name_pool.name("index__name__characters__ordering"), "characters", "ordering", unique=True),
+            ],
+        ),
+        (
+            NormalizedTableKey.TITLE,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("tconst", String(_TCONST_LENGTH), index=True, nullable=False, unique=True),
@@ -303,7 +314,7 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, Lis
             ],
         ),
         (
-            ReportTable.TITLE_ALIAS,
+            NormalizedTableKey.TITLE_ALIAS,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
@@ -320,16 +331,20 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[ReportTable, Lis
         ),
         _ordered_relation_table_info(
             index_name_pool,
-            ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE,
-            ReportTable.TITLE_ALIAS,
-            ReportTable.TITLE_ALIAS_TYPE,
+            NormalizedTableKey.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE,
+            NormalizedTableKey.TITLE_ALIAS,
+            NormalizedTableKey.TITLE_ALIAS_TYPE,
         ),
-        _key_table_info(ReportTable.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
+        _key_table_info(NormalizedTableKey.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         _ordered_relation_table_info(
-            index_name_pool, ReportTable.TITLE_TO_DIRECTOR, ReportTable.TITLE, ReportTable.NAME
+            index_name_pool, NormalizedTableKey.TITLE_TO_DIRECTOR, NormalizedTableKey.TITLE, NormalizedTableKey.NAME
         ),
-        _ordered_relation_table_info(index_name_pool, ReportTable.TITLE_TO_GENRE, ReportTable.TITLE, ReportTable.GENRE),
-        _ordered_relation_table_info(index_name_pool, ReportTable.TITLE_TO_WRITER, ReportTable.TITLE, ReportTable.NAME),
+        _ordered_relation_table_info(
+            index_name_pool, NormalizedTableKey.TITLE_TO_GENRE, NormalizedTableKey.TITLE, NormalizedTableKey.GENRE
+        ),
+        _ordered_relation_table_info(
+            index_name_pool, NormalizedTableKey.TITLE_TO_WRITER, NormalizedTableKey.TITLE, NormalizedTableKey.NAME
+        ),
     ]
 
 
@@ -463,7 +478,7 @@ class Database:
         self._has_to_drop_tables = has_to_drop_tables
         self._metadata = MetaData(self._engine)
         self._imdb_dataset_to_table_map = None
-        self._report_name_to_table_map = {}
+        self._norm_name_to_table_map = {}
         self._nconst_to_name_id_map = None
         self._tconst_to_title_id_map = None
 
@@ -484,29 +499,33 @@ class Database:
         assert self._imdb_dataset_to_table_map is not None, f"call {self.create_imdb_dataset_tables.__name__} first"
         return self._imdb_dataset_to_table_map
 
-    def report_table_for(self, report_table_key: ReportTable) -> Table:
-        return self._report_name_to_table_map[report_table_key]
+    def norm_table_for(self, report_table_key: NormalizedTableKey) -> Table:
+        return self._norm_name_to_table_map[report_table_key]
 
     def _add_report_table(self, table: Table):
-        self._report_name_to_table_map[ReportTable(table.name)] = table
+        self._norm_name_to_table_map[NormalizedTableKey(table.name)] = table
 
     def connection(self) -> Connection:
         return self._engine.connect()
 
     def nconst_to_name_id_map(self, connection: Connection):
         if self._nconst_to_name_id_map is None:
-            self._nconst_to_name_id_map = self._natural_key_to_id_map(connection, ReportTable.NAME, "nconst")
+            self._nconst_to_name_id_map = self._natural_key_to_id_map(connection, NormalizedTableKey.NAME, "nconst")
         return self._nconst_to_name_id_map
 
     def tconst_to_title_id_map(self, connection: Connection):
         if self._tconst_to_title_id_map is None:
-            self._tconst_to_title_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE, "tconst")
+            self._tconst_to_title_id_map = self._natural_key_to_id_map(connection, NormalizedTableKey.TITLE, "tconst")
         return self._tconst_to_title_id_map
 
     def _natural_key_to_id_map(
-        self, connection: Connection, report_table: ReportTable, natural_key_column: str = "name", id_column: str = "id"
+        self,
+        connection: Connection,
+        normalized_table_key: NormalizedTableKey,
+        natural_key_column: str = "name",
+        id_column: str = "id",
     ) -> Dict[str, int]:
-        table = self.report_table_for(report_table)
+        table = self.norm_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
         result = {name: id_ for name, id_ in connection.execute(name_id_select)}
@@ -571,13 +590,15 @@ class Database:
                                 )
                         table_build_status.log_added_rows(bulk_insert._count)
 
-    def create_report_tables(self):
+    def create_normalized_tables(self):
         log.info("creating report tables")
-        for report_table, options in report_table_infos(self._normalized_index_name_pool):
+        for normalized_table_key, options in report_table_infos(self._normalized_index_name_pool):
             try:
-                self._report_name_to_table_map[report_table] = Table(report_table.value, self.metadata, *options)
+                self._norm_name_to_table_map[normalized_table_key] = Table(
+                    normalized_table_key.value, self.metadata, *options
+                )
             except SQLAlchemyError as error:
-                raise PimdbError(f'cannot create report table "{report_table.value}": {error}') from error
+                raise PimdbError(f'cannot create report table "{normalized_table_key.value}": {error}') from error
         if self._has_to_drop_tables:
             self.metadata.drop_all()
         self.metadata.create_all()
@@ -588,9 +609,13 @@ class Database:
         )
 
     def build_key_table_from_query(
-        self, connection: Connection, report_table: ReportTable, query: SelectBase, delimiter: Optional[str] = None
+        self,
+        connection: Connection,
+        normalized_table_key: NormalizedTableKey,
+        query: SelectBase,
+        delimiter: Optional[str] = None,
     ):
-        table_to_build = self.report_table_for(report_table)
+        table_to_build = self.norm_table_for(normalized_table_key)
         with TableBuildStatus(connection, table_to_build) as table_build_status:
             single_line_query = " ".join(str(query).replace("\n", " ").split())
             log.debug("querying key values: %s", single_line_query)
@@ -612,8 +637,10 @@ class Database:
             self._build_key_table_from_values(connection, table_to_build, values)
             table_build_status.log_added_rows(connection)
 
-    def build_key_table_from_values(self, connection: Connection, report_table: ReportTable, values: Sequence[str]):
-        table_to_build = self.report_table_for(report_table)
+    def build_key_table_from_values(
+        self, connection: Connection, normalized_table_key: NormalizedTableKey, values: Sequence[str]
+    ):
+        table_to_build = self.norm_table_for(normalized_table_key)
         with TableBuildStatus(connection, table_to_build) as table_build_status:
             table_build_status.clear_table()
             self._build_key_table_from_values(connection, table_to_build, values)
@@ -627,13 +654,13 @@ class Database:
 
     def build_title_alias_type_table(self, connection: Connection) -> None:
         with connection.begin():
-            self.build_key_table_from_values(connection, ReportTable.TITLE_ALIAS_TYPE, IMDB_TITLE_ALIAS_TYPES)
+            self.build_key_table_from_values(connection, NormalizedTableKey.TITLE_ALIAS_TYPE, IMDB_TITLE_ALIAS_TYPES)
 
     def build_title_type_table(self, connection: Connection):
         title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
         with connection.begin():
             self.build_key_table_from_query(
-                connection, ReportTable.TITLE_TYPE, select([title_basics_table.c.titleType]).distinct()
+                connection, NormalizedTableKey.TITLE_TYPE, select([title_basics_table.c.titleType]).distinct()
             )
 
     def build_genre_table(self, connection: Connection):
@@ -641,7 +668,10 @@ class Database:
         genres_column = title_basics_table.c.genres
         with connection.begin():
             self.build_key_table_from_query(
-                connection, ReportTable.GENRE, select([genres_column]).where(genres_column.isnot(None)).distinct(), ","
+                connection,
+                NormalizedTableKey.GENRE,
+                select([genres_column]).where(genres_column.isnot(None)).distinct(),
+                ",",
             )
 
     def build_profession_table(self, connection: Connection):
@@ -649,16 +679,16 @@ class Database:
         category_column = title_principals_table.c.category
         with connection.begin():
             self.build_key_table_from_query(
-                connection, ReportTable.PROFESSION, select([category_column]).distinct(),
+                connection, NormalizedTableKey.PROFESSION, select([category_column]).distinct(),
             )
 
     def build_participation_table(self, connection: Connection):
-        participation_table = self.report_table_for(ReportTable.PARTICIPATION)
+        participation_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION)
         with TableBuildStatus(connection, participation_table) as table_build_status:
-            name_table = self.report_table_for(ReportTable.NAME)
-            title_table = self.report_table_for(ReportTable.TITLE)
+            name_table = self.norm_table_for(NormalizedTableKey.NAME)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-            profession_table = self.report_table_for(ReportTable.PROFESSION)
+            profession_table = self.norm_table_for(NormalizedTableKey.PROFESSION)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -689,8 +719,8 @@ class Database:
                 self.check_table_count(connection, title_principals_table, participation_table)
 
     def build_characters_to_character_and_character_table(self, connection: Connection):
-        characters_to_character_table = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
-        with TableBuildStatus(connection, characters_to_character_table) as table_build_status:
+        temp_character_table = self.norm_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
+        with TableBuildStatus(connection, temp_character_table) as table_build_status:
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
             characters_column = title_principals_table.c.characters
             select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
@@ -699,7 +729,7 @@ class Database:
             character_name_to_character_id_map = {"": character_count}
             with connection.begin():
                 table_build_status.clear_table()
-                with BulkInsert(connection, characters_to_character_table, self._bulk_size) as bulk_insert:
+                with BulkInsert(connection, temp_character_table, self._bulk_size) as bulk_insert:
                     for (characters,) in connection.execute(select_characters):
                         try:
                             characters_names_from_json = json.loads(characters)
@@ -724,7 +754,7 @@ class Database:
                             )
                     table_build_status.log_added_rows(bulk_insert.count)
 
-        character_table = self.report_table_for(ReportTable.CHARACTER)
+        character_table = self.norm_table_for(NormalizedTableKey.CHARACTER)
         with TableBuildStatus(connection, character_table) as character_build_status:
             with connection.begin():
                 character_build_status.clear_table()
@@ -734,14 +764,14 @@ class Database:
                     character_build_status.log_added_rows(character_bulk_insert.count)
 
     def build_participation_to_character_table(self, connection: Connection):
-        participation_to_character_table = self.report_table_for(ReportTable.PARTICIPATION_TO_CHARACTER)
+        participation_to_character_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION_TO_CHARACTER)
         with TableBuildStatus(connection, participation_to_character_table) as table_build_status:
-            name_table = self.report_table_for(ReportTable.NAME)
-            participation_table = self.report_table_for(ReportTable.PARTICIPATION)
-            profession_table = self.report_table_for(ReportTable.PROFESSION)
-            title_table = self.report_table_for(ReportTable.TITLE)
+            name_table = self.norm_table_for(NormalizedTableKey.NAME)
+            participation_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION)
+            profession_table = self.norm_table_for(NormalizedTableKey.PROFESSION)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-            characters_to_character = self.report_table_for(ReportTable.CHARACTERS_TO_CHARACTER)
+            temp_characters_to_character = self.norm_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -754,8 +784,8 @@ class Database:
                     select(
                         [
                             participation_table.c.id,
-                            characters_to_character.c.ordering,
-                            characters_to_character.c.character_id,
+                            temp_characters_to_character.c.ordering,
+                            temp_characters_to_character.c.character_id,
                         ]
                     )
                     .select_from(
@@ -770,8 +800,8 @@ class Database:
                             ),
                         )
                         .join(
-                            characters_to_character,
-                            characters_to_character.c.characters == title_principals_table.c.characters,
+                            temp_characters_to_character,
+                            temp_characters_to_character.c.characters == title_principals_table.c.characters,
                         )
                         .join(profession_table, profession_table.c.name == title_principals_table.c.category)
                     )
@@ -786,7 +816,7 @@ class Database:
         log.info("building %s table", table.name)
 
     def build_name_table(self, connection: Connection) -> None:
-        name_table = self.report_table_for(ReportTable.NAME)
+        name_table = self.norm_table_for(NormalizedTableKey.NAME)
         with TableBuildStatus(connection, name_table) as table_build_status:
             name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
             with connection.begin():
@@ -813,10 +843,10 @@ class Database:
                 table_build_status.log_added_rows(connection)
 
     def build_name_to_known_for_title_table(self, connection: Connection):
-        name_to_known_for_title_table = self.report_table_for(ReportTable.NAME_TO_KNOWN_FOR_TITLE)
+        name_to_known_for_title_table = self.norm_table_for(NormalizedTableKey.NAME_TO_KNOWN_FOR_TITLE)
         with TableBuildStatus(connection, name_to_known_for_title_table) as table_build_status:
             name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
-            name_table = self.report_table_for(ReportTable.NAME)
+            name_table = self.norm_table_for(NormalizedTableKey.NAME)
             known_for_titles_column = name_basics_table.c.knownForTitles
             select_known_for_title_tconsts = (
                 select([name_table.c.id, name_table.c.nconst, known_for_titles_column])
@@ -845,11 +875,11 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_table(self, connection: Connection) -> None:
-        title_table = self.report_table_for(ReportTable.TITLE)
+        title_table = self.norm_table_for(NormalizedTableKey.TITLE)
         with TableBuildStatus(connection, title_table) as table_build_status:
             title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
             title_ratings_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_RATINGS]
-            title_type_table = self.report_table_for(ReportTable.TITLE_TYPE)
+            title_type_table = self.norm_table_for(NormalizedTableKey.TITLE_TYPE)
             with connection.begin():
                 table_build_status.clear_table()
                 insert_statement = title_table.insert().from_select(
@@ -911,10 +941,10 @@ class Database:
             log.warning('target table "%s" should contain rows but is empty',)
 
     def build_episode_table(self, connection: Connection):
-        episode_table = self.report_table_for(ReportTable.EPISODE)
+        episode_table = self.norm_table_for(NormalizedTableKey.EPISODE)
         with TableBuildStatus(connection, episode_table) as table_build_status:
-            title_for_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_title")
-            title_for_parent_title_alias = self.report_table_for(ReportTable.TITLE).alias("title_for_parent_title")
+            title_for_title_alias = self.norm_table_for(NormalizedTableKey.TITLE).alias("title_for_title")
+            title_for_parent_title_alias = self.norm_table_for(NormalizedTableKey.TITLE).alias("title_for_parent_title")
             title_episode_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_EPISODE]
 
             insert_episode = episode_table.insert().from_select(
@@ -947,17 +977,17 @@ class Database:
                 table_build_status.log_added_rows(connection)
 
     def build_title_to_genre_table(self, connection: Connection):
-        title_to_genre_table = self.report_table_for(ReportTable.TITLE_TO_GENRE)
+        title_to_genre_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_GENRE)
         with TableBuildStatus(connection, title_to_genre_table) as table_build_status:
             title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
-            title_table = self.report_table_for(ReportTable.TITLE)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
             genres_column = title_basics_table.c.genres
             select_genre_data = (
                 select([title_table.c.id, genres_column])
                 .select_from(title_table.join(title_basics_table, title_basics_table.c.tconst == title_table.c.tconst))
                 .where(genres_column.isnot(None))
             )
-            genre_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.GENRE)
+            genre_name_to_id_map = self._natural_key_to_id_map(connection, NormalizedTableKey.GENRE)
             with connection.begin():
                 table_build_status.clear_table()
                 with BulkInsert(connection, title_to_genre_table, self._bulk_size) as bulk_insert:
@@ -968,11 +998,11 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_to_director_table(self, connection: Connection) -> None:
-        title_to_director_table = self.report_table_for(ReportTable.TITLE_TO_DIRECTOR)
+        title_to_director_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_DIRECTOR)
         self._build_title_to_crew_table(connection, "directors", title_to_director_table)
 
     def build_title_to_writer_table(self, connection: Connection) -> None:
-        title_to_writer_table = self.report_table_for(ReportTable.TITLE_TO_WRITER)
+        title_to_writer_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_WRITER)
         self._build_title_to_crew_table(connection, "writers", title_to_writer_table)
 
     def _build_title_to_crew_table(
@@ -980,7 +1010,7 @@ class Database:
     ) -> None:
         with TableBuildStatus(connection, target_table) as table_build_status:
             nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
-            title_table = self.report_table_for(ReportTable.TITLE)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
             title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
             column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
             with connection.begin():
@@ -1033,10 +1063,10 @@ class Database:
         return result
 
     def build_title_alias_table(self, connection: Connection):
-        title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
+        title_alias_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS)
         with TableBuildStatus(connection, title_alias_table) as table_build_status:
             title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-            title_table = self.report_table_for(ReportTable.TITLE)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -1067,13 +1097,15 @@ class Database:
                 self.check_table_has_data(connection, title_alias_table)
 
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
-        # TODO: Improve performance by using helper table similar to character_to_character.
-        title_alias_to_title_alias_type_table = self.report_table_for(ReportTable.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
+        # TODO: Improve performance by using helper table similar to characters_to_character.
+        title_alias_to_title_alias_type_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
         with TableBuildStatus(connection, title_alias_to_title_alias_type_table) as table_build_status:
-            title_table = self.report_table_for(ReportTable.TITLE)
+            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
             title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-            title_alias_table = self.report_table_for(ReportTable.TITLE_ALIAS)
-            title_alias_type_name_to_id_map = self._natural_key_to_id_map(connection, ReportTable.TITLE_ALIAS_TYPE)
+            title_alias_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS)
+            title_alias_type_name_to_id_map = self._natural_key_to_id_map(
+                connection, NormalizedTableKey.TITLE_ALIAS_TYPE
+            )
             self._unknown_title_alias_types = set()
 
             title_akas_types_column = title_akas_table.c.types

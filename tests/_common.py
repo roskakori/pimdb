@@ -1,4 +1,4 @@
-"""Functions commonly used by multiple tests."""
+"""Functions and constants commonly used by multiple tests."""
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
 import gzip
@@ -13,7 +13,7 @@ from pimdb.database import Database
 TESTS_DATA_PATH = os.path.join(os.path.dirname(__file__), "data")
 TESTS_OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "output")
 
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("pimdb.test")
 
 
 def output_path(name):
@@ -27,6 +27,8 @@ def output_path(name):
 #: override this using the environment variable :envvar:`PIMDB_TEST_DATABASE`.
 DEFAULT_TEST_ENGINE = os.environ.get("PIMDB_TEST_DATABASE", "sqlite:///" + output_path("pimdb_test.db"))
 
+#: Optional database engine to use for tests that require full IMDb datasets.
+TEST_FULL_ENGINE = os.environ.get("PIMDB_TEST_FULL_DATABASE")
 
 #: True if :data:`DEFAULT_TEST_ENGINE` is a PostgreSQL database.
 IS_POSTGRES_DEFAULT_TEST_ENGINE = DEFAULT_TEST_ENGINE.startswith("postgres")
@@ -63,5 +65,5 @@ def gzipped_tests_data_path(dataset: ImdbDataset) -> str:
 def create_database_with_tables(engine_info: str) -> Database:
     result = Database(engine_info, has_to_drop_tables=True)
     result.create_imdb_dataset_tables()
-    result.create_report_tables()
+    result.create_normalized_tables()
     return result

@@ -198,7 +198,7 @@ class _BuildCommand:
 
     def run(self):
         self._database.create_imdb_dataset_tables()
-        self._database.create_report_tables()
+        self._database.create_normalized_tables()
         with self._database.connection() as self._connection:
             self._database.build_title_alias_type_table(self._connection)
             self._database.build_genre_table(self._connection)
