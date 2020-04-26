@@ -478,7 +478,7 @@ class Database:
         self._has_to_drop_tables = has_to_drop_tables
         self._metadata = MetaData(self._engine)
         self._imdb_dataset_to_table_map = None
-        self._norm_name_to_table_map = {}
+        self._normalized_name_to_table_map = {}
         self._nconst_to_name_id_map = None
         self._tconst_to_title_id_map = None
 
@@ -499,11 +499,11 @@ class Database:
         assert self._imdb_dataset_to_table_map is not None, f"call {self.create_imdb_dataset_tables.__name__} first"
         return self._imdb_dataset_to_table_map
 
-    def norm_table_for(self, report_table_key: NormalizedTableKey) -> Table:
-        return self._norm_name_to_table_map[report_table_key]
+    def normalized_table_for(self, report_table_key: NormalizedTableKey) -> Table:
+        return self._normalized_name_to_table_map[report_table_key]
 
     def _add_report_table(self, table: Table):
-        self._norm_name_to_table_map[NormalizedTableKey(table.name)] = table
+        self._normalized_name_to_table_map[NormalizedTableKey(table.name)] = table
 
     def connection(self) -> Connection:
         return self._engine.connect()
@@ -525,7 +525,7 @@ class Database:
         natural_key_column: str = "name",
         id_column: str = "id",
     ) -> Dict[str, int]:
-        table = self.norm_table_for(normalized_table_key)
+        table = self.normalized_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
         result = {name: id_ for name, id_ in connection.execute(name_id_select)}
@@ -594,7 +594,7 @@ class Database:
         log.info("creating report tables")
         for normalized_table_key, options in report_table_infos(self._normalized_index_name_pool):
             try:
-                self._norm_name_to_table_map[normalized_table_key] = Table(
+                self._normalized_name_to_table_map[normalized_table_key] = Table(
                     normalized_table_key.value, self.metadata, *options
                 )
             except SQLAlchemyError as error:
@@ -615,7 +615,7 @@ class Database:
         query: SelectBase,
         delimiter: Optional[str] = None,
     ):
-        table_to_build = self.norm_table_for(normalized_table_key)
+        table_to_build = self.normalized_table_for(normalized_table_key)
         with TableBuildStatus(connection, table_to_build) as table_build_status:
             single_line_query = " ".join(str(query).replace("\n", " ").split())
             log.debug("querying key values: %s", single_line_query)
@@ -640,7 +640,7 @@ class Database:
     def build_key_table_from_values(
         self, connection: Connection, normalized_table_key: NormalizedTableKey, values: Sequence[str]
     ):
-        table_to_build = self.norm_table_for(normalized_table_key)
+        table_to_build = self.normalized_table_for(normalized_table_key)
         with TableBuildStatus(connection, table_to_build) as table_build_status:
             table_build_status.clear_table()
             self._build_key_table_from_values(connection, table_to_build, values)
@@ -683,12 +683,12 @@ class Database:
             )
 
     def build_participation_table(self, connection: Connection):
-        participation_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION)
+        participation_table = self.normalized_table_for(NormalizedTableKey.PARTICIPATION)
         with TableBuildStatus(connection, participation_table) as table_build_status:
-            name_table = self.norm_table_for(NormalizedTableKey.NAME)
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            name_table = self.normalized_table_for(NormalizedTableKey.NAME)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-            profession_table = self.norm_table_for(NormalizedTableKey.PROFESSION)
+            profession_table = self.normalized_table_for(NormalizedTableKey.PROFESSION)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -719,7 +719,7 @@ class Database:
                 self.check_table_count(connection, title_principals_table, participation_table)
 
     def build_characters_to_character_and_character_table(self, connection: Connection):
-        temp_character_table = self.norm_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
+        temp_character_table = self.normalized_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
         with TableBuildStatus(connection, temp_character_table) as table_build_status:
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
             characters_column = title_principals_table.c.characters
@@ -754,7 +754,7 @@ class Database:
                             )
                     table_build_status.log_added_rows(bulk_insert.count)
 
-        character_table = self.norm_table_for(NormalizedTableKey.CHARACTER)
+        character_table = self.normalized_table_for(NormalizedTableKey.CHARACTER)
         with TableBuildStatus(connection, character_table) as character_build_status:
             with connection.begin():
                 character_build_status.clear_table()
@@ -764,14 +764,14 @@ class Database:
                     character_build_status.log_added_rows(character_bulk_insert.count)
 
     def build_participation_to_character_table(self, connection: Connection):
-        participation_to_character_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION_TO_CHARACTER)
+        participation_to_character_table = self.normalized_table_for(NormalizedTableKey.PARTICIPATION_TO_CHARACTER)
         with TableBuildStatus(connection, participation_to_character_table) as table_build_status:
-            name_table = self.norm_table_for(NormalizedTableKey.NAME)
-            participation_table = self.norm_table_for(NormalizedTableKey.PARTICIPATION)
-            profession_table = self.norm_table_for(NormalizedTableKey.PROFESSION)
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            name_table = self.normalized_table_for(NormalizedTableKey.NAME)
+            participation_table = self.normalized_table_for(NormalizedTableKey.PARTICIPATION)
+            profession_table = self.normalized_table_for(NormalizedTableKey.PROFESSION)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
             title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-            temp_characters_to_character = self.norm_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
+            temp_characters_to_character = self.normalized_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -816,7 +816,7 @@ class Database:
         log.info("building %s table", table.name)
 
     def build_name_table(self, connection: Connection) -> None:
-        name_table = self.norm_table_for(NormalizedTableKey.NAME)
+        name_table = self.normalized_table_for(NormalizedTableKey.NAME)
         with TableBuildStatus(connection, name_table) as table_build_status:
             name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
             with connection.begin():
@@ -843,10 +843,10 @@ class Database:
                 table_build_status.log_added_rows(connection)
 
     def build_name_to_known_for_title_table(self, connection: Connection):
-        name_to_known_for_title_table = self.norm_table_for(NormalizedTableKey.NAME_TO_KNOWN_FOR_TITLE)
+        name_to_known_for_title_table = self.normalized_table_for(NormalizedTableKey.NAME_TO_KNOWN_FOR_TITLE)
         with TableBuildStatus(connection, name_to_known_for_title_table) as table_build_status:
             name_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.NAME_BASICS]
-            name_table = self.norm_table_for(NormalizedTableKey.NAME)
+            name_table = self.normalized_table_for(NormalizedTableKey.NAME)
             known_for_titles_column = name_basics_table.c.knownForTitles
             select_known_for_title_tconsts = (
                 select([name_table.c.id, name_table.c.nconst, known_for_titles_column])
@@ -875,11 +875,11 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_table(self, connection: Connection) -> None:
-        title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+        title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
         with TableBuildStatus(connection, title_table) as table_build_status:
             title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
             title_ratings_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_RATINGS]
-            title_type_table = self.norm_table_for(NormalizedTableKey.TITLE_TYPE)
+            title_type_table = self.normalized_table_for(NormalizedTableKey.TITLE_TYPE)
             with connection.begin():
                 table_build_status.clear_table()
                 insert_statement = title_table.insert().from_select(
@@ -941,10 +941,12 @@ class Database:
             log.warning('target table "%s" should contain rows but is empty',)
 
     def build_episode_table(self, connection: Connection):
-        episode_table = self.norm_table_for(NormalizedTableKey.EPISODE)
+        episode_table = self.normalized_table_for(NormalizedTableKey.EPISODE)
         with TableBuildStatus(connection, episode_table) as table_build_status:
-            title_for_title_alias = self.norm_table_for(NormalizedTableKey.TITLE).alias("title_for_title")
-            title_for_parent_title_alias = self.norm_table_for(NormalizedTableKey.TITLE).alias("title_for_parent_title")
+            title_for_title_alias = self.normalized_table_for(NormalizedTableKey.TITLE).alias("title_for_title")
+            title_for_parent_title_alias = self.normalized_table_for(NormalizedTableKey.TITLE).alias(
+                "title_for_parent_title"
+            )
             title_episode_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_EPISODE]
 
             insert_episode = episode_table.insert().from_select(
@@ -977,10 +979,10 @@ class Database:
                 table_build_status.log_added_rows(connection)
 
     def build_title_to_genre_table(self, connection: Connection):
-        title_to_genre_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_GENRE)
+        title_to_genre_table = self.normalized_table_for(NormalizedTableKey.TITLE_TO_GENRE)
         with TableBuildStatus(connection, title_to_genre_table) as table_build_status:
             title_basics_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_BASICS]
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
             genres_column = title_basics_table.c.genres
             select_genre_data = (
                 select([title_table.c.id, genres_column])
@@ -998,11 +1000,11 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     def build_title_to_director_table(self, connection: Connection) -> None:
-        title_to_director_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_DIRECTOR)
+        title_to_director_table = self.normalized_table_for(NormalizedTableKey.TITLE_TO_DIRECTOR)
         self._build_title_to_crew_table(connection, "directors", title_to_director_table)
 
     def build_title_to_writer_table(self, connection: Connection) -> None:
-        title_to_writer_table = self.norm_table_for(NormalizedTableKey.TITLE_TO_WRITER)
+        title_to_writer_table = self.normalized_table_for(NormalizedTableKey.TITLE_TO_WRITER)
         self._build_title_to_crew_table(connection, "writers", title_to_writer_table)
 
     def _build_title_to_crew_table(
@@ -1010,7 +1012,7 @@ class Database:
     ) -> None:
         with TableBuildStatus(connection, target_table) as table_build_status:
             nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
             title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
             column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
             with connection.begin():
@@ -1063,10 +1065,10 @@ class Database:
         return result
 
     def build_title_alias_table(self, connection: Connection):
-        title_alias_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS)
+        title_alias_table = self.normalized_table_for(NormalizedTableKey.TITLE_ALIAS)
         with TableBuildStatus(connection, title_alias_table) as table_build_status:
             title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
 
             with connection.begin():
                 table_build_status.clear_table()
@@ -1098,11 +1100,13 @@ class Database:
 
     def build_title_alias_to_title_alias_type_table(self, connection: Connection):
         # TODO: Improve performance by using helper table similar to characters_to_character.
-        title_alias_to_title_alias_type_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE)
+        title_alias_to_title_alias_type_table = self.normalized_table_for(
+            NormalizedTableKey.TITLE_ALIAS_TO_TITLE_ALIAS_TYPE
+        )
         with TableBuildStatus(connection, title_alias_to_title_alias_type_table) as table_build_status:
-            title_table = self.norm_table_for(NormalizedTableKey.TITLE)
+            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
             title_akas_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_AKAS]
-            title_alias_table = self.norm_table_for(NormalizedTableKey.TITLE_ALIAS)
+            title_alias_table = self.normalized_table_for(NormalizedTableKey.TITLE_ALIAS)
             title_alias_type_name_to_id_map = self._natural_key_to_id_map(
                 connection, NormalizedTableKey.TITLE_ALIAS_TYPE
             )
