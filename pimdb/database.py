@@ -337,13 +337,7 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
         ),
         _key_table_info(NormalizedTableKey.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
         _ordered_relation_table_info(
-            index_name_pool, NormalizedTableKey.TITLE_TO_DIRECTOR, NormalizedTableKey.TITLE, NormalizedTableKey.NAME
-        ),
-        _ordered_relation_table_info(
             index_name_pool, NormalizedTableKey.TITLE_TO_GENRE, NormalizedTableKey.TITLE, NormalizedTableKey.GENRE
-        ),
-        _ordered_relation_table_info(
-            index_name_pool, NormalizedTableKey.TITLE_TO_WRITER, NormalizedTableKey.TITLE, NormalizedTableKey.NAME
         ),
     ]
 
@@ -591,7 +585,8 @@ class Database:
                         table_build_status.log_added_rows(bulk_insert._count)
 
     def create_normalized_tables(self):
-        log.info("creating report tables")
+        log.info("creating normalized tables")
+        self._drop_obsolete_normalized_tables()
         for normalized_table_key, options in report_table_infos(self._normalized_index_name_pool):
             try:
                 self._normalized_name_to_table_map[normalized_table_key] = Table(
@@ -602,6 +597,12 @@ class Database:
         if self._has_to_drop_tables:
             self.metadata.drop_all()
         self.metadata.create_all()
+
+    def _drop_obsolete_normalized_tables(self):
+        obsolete_table_names = ["title_to_director", "title_to_writer"]
+        for obsolete_table_name in obsolete_table_names:
+            obsolete_table = Table(obsolete_table_name, self._metadata, Column("_dummy", Integer))
+            obsolete_table.drop(self._engine, checkfirst=True)
 
     def key_columns(self, imdb_dataset: ImdbDataset) -> Tuple:
         return tuple(
@@ -997,47 +998,6 @@ class Database:
                         for ordering, genre in enumerate(genres.split(","), start=1):
                             genre_id = genre_name_to_id_map[genre]
                             bulk_insert.add({"genre_id": genre_id, "ordering": ordering, "title_id": title_id})
-                    table_build_status.log_added_rows(bulk_insert.count)
-
-    def build_title_to_director_table(self, connection: Connection) -> None:
-        title_to_director_table = self.normalized_table_for(NormalizedTableKey.TITLE_TO_DIRECTOR)
-        self._build_title_to_crew_table(connection, "directors", title_to_director_table)
-
-    def build_title_to_writer_table(self, connection: Connection) -> None:
-        title_to_writer_table = self.normalized_table_for(NormalizedTableKey.TITLE_TO_WRITER)
-        self._build_title_to_crew_table(connection, "writers", title_to_writer_table)
-
-    def _build_title_to_crew_table(
-        self, connection: Connection, column_with_nconsts_name: str, target_table: Table
-    ) -> None:
-        with TableBuildStatus(connection, target_table) as table_build_status:
-            nconst_to_name_id_map = self.nconst_to_name_id_map(connection)
-            title_table = self.normalized_table_for(NormalizedTableKey.TITLE)
-            title_crew_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_CREW]
-            column_with_nconsts = getattr(title_crew_table.columns, column_with_nconsts_name)
-            with connection.begin():
-                table_build_status.clear_table()
-                directors_select = (
-                    select([title_table.c.id, title_table.c.tconst, column_with_nconsts])
-                    .select_from(title_table.join(title_crew_table, title_table.c.tconst == title_crew_table.c.tconst))
-                    .where(column_with_nconsts.isnot(None))
-                )
-                with BulkInsert(connection, target_table, self._bulk_size) as bulk_insert:
-                    for title_id, tconst, directors in connection.execute(directors_select):
-                        ordering = 0
-                        for nconst in directors.split(","):
-                            name_id = nconst_to_name_id_map.get(nconst)
-                            if name_id is not None:
-                                ordering += 1
-                                bulk_insert.add({"name_id": name_id, "ordering": ordering, "title_id": title_id})
-                            else:
-                                log.debug(
-                                    'ignored unknown %s.%s "%s" for title "%s"',
-                                    title_crew_table.name,
-                                    column_with_nconsts_name,
-                                    nconst,
-                                    tconst,
-                                )
                     table_build_status.log_added_rows(bulk_insert.count)
 
     @functools.lru_cache(None)

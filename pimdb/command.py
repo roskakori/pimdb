@@ -214,8 +214,6 @@ class _BuildCommand:
             self._database.build_participation_to_character_table(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_genre_table(self._connection)
-            self._database.build_title_to_director_table(self._connection)
-            self._database.build_title_to_writer_table(self._connection)
 
 
 class _QueryCommand:

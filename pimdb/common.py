@@ -87,8 +87,6 @@ class NormalizedTableKey(Enum):
     TITLE_ALIAS_TO_TITLE_ALIAS_TYPE = "title_alias_to_title_alias_type"
     TITLE_ALIAS_TYPE = "title_alias_type"
     TITLE_TO_GENRE = "title_to_genre"
-    TITLE_TO_DIRECTOR = "title_to_director"
-    TITLE_TO_WRITER = "title_to_writer"
     TITLE_TYPE = "title_type"
 
 
