@@ -5,6 +5,8 @@ Version 0.2.2, 2020-04-26
 
 * Fixed :py:exc:`AssertionError` when command line option ``--bulk`` was less
   than 1.
+* Added NAME ``normalized`` as option for :command:`pimdb transfer` to
+  transfer only the datasets needed by :command:`pimdb build`.
 * Removed redundant normalized tables ``title_to(director|writer)``. Use
   relation ``praticipation.profession_id`` to limit query results to certain
   professions.

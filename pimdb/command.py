@@ -22,7 +22,8 @@ _LOG_LEVEL_MAP = {
     "info": logging.INFO,
 }
 _ALL_NAME = "all"
-_VALID_NAMES = [_ALL_NAME] + IMDB_DATASET_NAMES
+_NORMALIZED_NAME = "normalized"
+_VALID_NAMES = [_ALL_NAME, _NORMALIZED_NAME] + IMDB_DATASET_NAMES
 
 
 class CommandName(Enum):
@@ -162,9 +163,15 @@ class _DownloadCommand:
 
 
 def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.Namespace) -> List[str]:
-    if _ALL_NAME in args.names:
+    def _check_special_name_is_only_name():
         if len(args.names) >= 2:
             parser.error(f'if NAME "{_ALL_NAME}" is specified, it must be the only NAME')
+
+    if _ALL_NAME in args.names:
+        _check_special_name_is_only_name()
+        result = IMDB_DATASET_NAMES
+    elif _NORMALIZED_NAME in args.names:
+        _check_special_name_is_only_name()
         result = IMDB_DATASET_NAMES
     else:
         # Remove possible duplicates and sort.

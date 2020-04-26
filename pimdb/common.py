@@ -92,6 +92,10 @@ class NormalizedTableKey(Enum):
 
 #: Names of all available IMDb datasets.
 IMDB_DATASET_NAMES = [dataset.value for dataset in ImdbDataset]
+
+#: Names of datasets required to build normalized tables.
+IMDB_DATASET_NAMES_FOR_NORMALIZED_TABLES = list(set(IMDB_DATASET_NAMES).difference([ImdbDataset.TITLE_CREW.name]))
+
 IMDB_DATASET_TO_KEY_COLUMNS_MAP = {
     ImdbDataset.NAME_BASICS: ["nconst"],
     ImdbDataset.TITLE_AKAS: ["titleId", "ordering"],

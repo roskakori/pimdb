@@ -36,6 +36,14 @@ def test_can_transfer_all_datasets(gzip_tsv_files):
     assert exit_code == 0
 
 
+def test_can_transfer_normalized_datasets(gzip_tsv_files):
+    database_engine = sqlite_engine(test_can_transfer_all_datasets)
+    exit_code = exit_code_for(
+        ["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "--drop", "normalized"]
+    )
+    assert exit_code == 0
+
+
 def test_can_query_dataset(gzip_tsv_files):
     database_engine = sqlite_engine(test_can_transfer_all_datasets)
     exit_code = exit_code_for(["query", "--database", database_engine, "select count(1)"])
@@ -91,7 +99,7 @@ def test_can_download_title_ratings():
 def test_can_build_report_tables(gzip_tsv_files):
     database_engine = sqlite_engine(test_can_build_report_tables)
     exit_code = exit_code_for(
-        ["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "--drop", "all"]
+        ["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "--drop", "normalized"]
     )
     assert exit_code == 0
     exit_code = exit_code_for(
