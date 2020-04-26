@@ -73,16 +73,6 @@ class BulkInsert:
             self.close()
 
 
-def escaped_character(char):
-    if char == '"' or char >= " ":
-        result = char
-    elif char == "\t":
-        result = "\\t"
-    else:
-        raise NotImplementedError(f"escaping must be implemented: char={char!r}")
-    return result
-
-
 class PostgresBulkLoad:
     def __init__(self, engine: Engine):
         self._engine = engine
@@ -94,7 +84,7 @@ class PostgresBulkLoad:
                 # NOTE: Some text fields do start with double quotes but do
                 #  not end with it before the next tab delimiter, so with
                 #  the defaults PostgreSQL's "copy from" would believe this is
-                #  very long field. To prevent this from happening we use a
+                #  a very long field. To prevent this from happening we use an
                 #  escape and quote character that are unlikely to show up in
                 #  the TSV.
                 #

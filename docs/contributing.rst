@@ -62,6 +62,18 @@ environment variable :envvar:`PIMDB_TEST_DATABASE`. For example:
 
     export PIMDB_TEST_DATABASE="postgresql+psycopg2://postgres@localhost:5439/pimdb_test"
 
+.. envvar:: PIMDB_TEST_FULL_DATABASE
+
+Some tests require a database built with actual full datasets instead of just
+small test datasets. Use the environment variable
+:envvar:`PIMDB_TEST_FULL_DATABASE` to set it. For example:
+
+.. code-block:: bash
+
+    export PIMDB_FULL_TEST_DATABASE="sqlite:////Users/me/Development/pimdb/pimdb.db"
+
+
+
 .. _test-run-with-postgres:
 
 Test run with PostgreSQL

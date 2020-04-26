@@ -64,6 +64,7 @@ Optionally you can specify a different database using the `--database` option
 with an
 [SQLAlchemy engine configuration](https://docs.sqlalchemy.org/en/13/core/engines.html).
 
+
 ### Querying tables
 
 To query the tables, you can use any database tool that supports SQLite, for
@@ -71,15 +72,27 @@ example the freely available and platform independent community edition of
 [DBeaver](https://dbeaver.io/) or the
 [command line shell for SQLite](https://sqlite.org/cli.html).
 
+For simple queries you can also use `pimdb` and look at the result as
+UTF-8 encoded TSV. For example, here are the details of the top 10 oldest
+people alive according to IMDb:
+
+```bash
+pimdb query "select * from NameBasics where birthYear is not null and deathYear is null order by birthYear limit 10" >oldest_people_alive.tsv
+```
+
+You can also run an SQL statement stored in a file:
+
+```bash
+pimdb query --file some.sql
+```
+
+
 ### Building normalized tables
 
 The tables so far are almost verbatim copies of the IMDb datasets with the
-exception that possible duplicate rows have been removed. This means that
-`NameBasics.nconst` and `TitleBasics.tconst` are unique, which sadly is not
-always (but still sometimes) the case for the datasets in the `.tsv.gz` files.
-
-This data model already allows to perform several kinds of queries quite
-easily and efficiently.
+exception that possible duplicate rows have been removed. This data model
+already allows to perform several kinds of queries quite easily and
+efficiently.
 
 However, the IMDb datasets do not offer a simple way to query N:M relations.
 For example, the column `NameBasics.knownForTitles` contains a comma separated
@@ -121,18 +134,20 @@ where
     name.primary_name = 'Alan Smithee'
 ```
 
+For more information on which tables are available on how they are related
+read the chapter about the
+[pimdb data model](https://pimdb.readthedocs.io/en/latest/datamodel.html).
 
-## Reference
 
-To get an overview of general command line option and available commands run:
+## Where to go from here
 
-```bash
-pimdb --help
-```
+Pimdb's [online documentation](https://pimdb.readthedocs.io/) describes all
+aspects in further detail. You might find the following chapters of particular
+interest:
 
-To learn the available command line options for a specific command run for
-example:
-
-```bash
-pimdb transfer --help
-```
+* [Usage](https://pimdb.readthedocs.io/en/latest/usage.html): all command line
+  options explained
+* [Data model](https://pimdb.readthedocs.io/en/latest/datamodel.html):
+  available tables and example SQL queries
+* [Contributing](https://pimdb.readthedocs.io/en/latest/contributing.html):
+  obtaining the source code and building the project locally

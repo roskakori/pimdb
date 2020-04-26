@@ -13,6 +13,7 @@ available from `IMDb datasets <https://www.imdb.com/interfaces/>`_.
    license
    installation
    usage
+   datamodel
    contributing
    changes
 
