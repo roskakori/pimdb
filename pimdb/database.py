@@ -599,7 +599,7 @@ class Database:
         self.metadata.create_all()
 
     def _drop_obsolete_normalized_tables(self):
-        obsolete_table_names = ["title_to_director", "title_to_writer"]
+        obsolete_table_names = ["characters_to_character", "title_to_director", "title_to_writer"]
         for obsolete_table_name in obsolete_table_names:
             obsolete_table = Table(obsolete_table_name, self._metadata, Column("_dummy", Integer))
             obsolete_table.drop(self._engine, checkfirst=True)
@@ -719,41 +719,39 @@ class Database:
                 table_build_status.log_added_rows(connection)
                 self.check_table_count(connection, title_principals_table, participation_table)
 
-    def build_characters_to_character_and_character_table(self, connection: Connection):
-        temp_character_table = self.normalized_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
-        with TableBuildStatus(connection, temp_character_table) as table_build_status:
-            title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
-            characters_column = title_principals_table.c.characters
-            select_characters = select([characters_column]).where(characters_column.isnot(None)).distinct()
-            character_count = 1
-            # Add dummy character for participations that do not represent a character, for example director.
-            character_name_to_character_id_map = {"": character_count}
-            with connection.begin():
-                table_build_status.clear_table()
-                with BulkInsert(connection, temp_character_table, self._bulk_size) as bulk_insert:
-                    for (characters,) in connection.execute(select_characters):
-                        try:
-                            characters_names_from_json = json.loads(characters)
-                        except Exception as error:
-                            raise PimdbError(
-                                f"cannot JSON parse {title_principals_table.name}.{characters_column.name}: "
-                                f"{characters!r}: {error}"
-                            )
-                        if not isinstance(characters_names_from_json, list):
-                            raise PimdbError(
-                                f"{title_principals_table.name}.{characters_column.name} must be a JSON list but is: "
-                                f"{characters!r}"
-                            )
-                        for ordering, character_name in enumerate(characters_names_from_json, start=1):
-                            character_id = character_name_to_character_id_map.get(character_name)
-                            if character_id is None:
-                                character_count += 1
-                                character_id = character_count
-                                character_name_to_character_id_map[character_name] = character_id
-                            bulk_insert.add(
-                                {"characters": characters, "character_id": character_id, "ordering": ordering}
-                            )
-                    table_build_status.log_added_rows(bulk_insert.count)
+    def build_temp_characters_to_character_and_character_table(self, connection: Connection):
+        log.info("building characters json to character names map")
+        title_principals_table = self.imdb_dataset_to_table_map[ImdbDataset.TITLE_PRINCIPALS]
+        characters_json_to_character_names_map = {}
+        character_names = set()
+        with connection.begin():
+            characters_json_column = title_principals_table.c.characters
+            select_characters_jsons = (
+                select([characters_json_column]).where(characters_json_column.isnot(None)).distinct()
+            )
+            for (characters_json,) in connection.execute(select_characters_jsons):
+                try:
+                    character_names_from_json = json.loads(characters_json)
+                except Exception as error:
+                    raise PimdbError(
+                        f"cannot JSON parse {title_principals_table.name}.{characters_json_column.name}: "
+                        f"{characters_json!r}: {error}"
+                    )
+                if not isinstance(character_names_from_json, list):
+                    raise PimdbError(
+                        f"{title_principals_table.name}.{characters_json_column.name} must be a JSON list but is: "
+                        f"{characters_json!r}"
+                    )
+                characters_json_to_character_names_map[characters_json] = character_names_from_json
+                character_names.update(character_names_from_json)
+        character_name_to_character_id_map = {
+            character_name: character_id for character_id, character_name in enumerate(sorted(character_names), start=1)
+        }
+        log.info(
+            "  found %d characters jsons with %d names",
+            len(characters_json_to_character_names_map),
+            len(character_names),
+        )
 
         character_table = self.normalized_table_for(NormalizedTableKey.CHARACTER)
         with TableBuildStatus(connection, character_table) as character_build_status:
@@ -763,6 +761,19 @@ class Database:
                     for character_name, character_id in character_name_to_character_id_map.items():
                         character_bulk_insert.add({"id": character_id, "name": character_name})
                     character_build_status.log_added_rows(character_bulk_insert.count)
+
+        temp_characters_to_character_table = self.normalized_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
+        with TableBuildStatus(connection, temp_characters_to_character_table) as table_build_status:
+            with connection.begin():
+                table_build_status.clear_table()
+                with BulkInsert(connection, temp_characters_to_character_table, self._bulk_size) as bulk_insert:
+                    for character_json, character_names in characters_json_to_character_names_map.items():
+                        for ordering, character_name in enumerate(character_names, start=1):
+                            character_id = character_name_to_character_id_map[character_name]
+                            bulk_insert.add(
+                                {"characters": character_json, "character_id": character_id, "ordering": ordering}
+                            )
+                    table_build_status.log_added_rows(bulk_insert.count)
 
     def build_participation_to_character_table(self, connection: Connection):
         participation_to_character_table = self.normalized_table_for(NormalizedTableKey.PARTICIPATION_TO_CHARACTER)

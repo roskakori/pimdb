@@ -217,7 +217,7 @@ class _BuildCommand:
             self._database.build_title_alias_to_title_alias_type_table(self._connection)
             self._database.build_episode_table(self._connection)
             self._database.build_participation_table(self._connection)
-            self._database.build_characters_to_character_and_character_table(self._connection)
+            self._database.build_temp_characters_to_character_and_character_table(self._connection)
             self._database.build_participation_to_character_table(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_genre_table(self._connection)

@@ -74,7 +74,7 @@ class ImdbDataset(Enum):
 
 class NormalizedTableKey(Enum):
     CHARACTER = "character"
-    TEMP_CHARACTERS_TO_CHARACTER = "characters_to_character"
+    TEMP_CHARACTERS_TO_CHARACTER = "temp_characters_to_character"
     EPISODE = "episode"
     GENRE = "genre"
     NAME = "name"

@@ -3,6 +3,8 @@ Changes
 
 Version 0.2.3, 2020-05-02
 
+* Fixed :py:exc:`ForeignKeyViolation` when building normalized temporary table
+  ``characters_to_character``.
 * Fixed :py:exc:`ValueError` when no command was specified for the
   :command:`pimdb` command line client.
 
