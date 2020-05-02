@@ -266,6 +266,9 @@ def exit_code_for(arguments: Optional[List[str]] = None) -> int:
     try:
         parser = _parser()
         args = parser.parse_args(arguments)
+        if args.command is None:
+            possible_commands_text = ", ".join(command_name.value for command_name in CommandName)
+            parser.error(f"COMMAND must be specified; possible commands are: {possible_commands_text}")
         _check_bulk_size(parser, args)
 
         pimdb_log_level = logging.getLevelName(args.log.upper()) if args.log != "sql" else logging.DEBUG
