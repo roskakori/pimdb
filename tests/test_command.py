@@ -37,7 +37,7 @@ def test_can_transfer_all_datasets(gzip_tsv_files):
 
 
 def test_can_transfer_normalized_datasets(gzip_tsv_files):
-    database_engine = sqlite_engine(test_can_transfer_all_datasets)
+    database_engine = sqlite_engine(test_can_transfer_normalized_datasets)
     exit_code = exit_code_for(
         ["transfer", "--dataset-folder", TESTS_DATA_PATH, "--database", database_engine, "--drop", "normalized"]
     )
@@ -53,6 +53,12 @@ def test_can_query_dataset(gzip_tsv_files):
 def test_fails_on_too_small_bulk_size():
     with pytest.raises(SystemExit) as system_exit:
         exit_code_for([CommandName.TRANSFER.value, "--bulk", "0", "title.ratings"])
+        assert system_exit.code == 1
+
+
+def test_fails_on_missing_command():
+    with pytest.raises(SystemExit) as system_exit:
+        exit_code_for([])
         assert system_exit.code == 1
 
 

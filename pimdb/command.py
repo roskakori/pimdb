@@ -217,7 +217,7 @@ class _BuildCommand:
             self._database.build_title_alias_to_title_alias_type_table(self._connection)
             self._database.build_episode_table(self._connection)
             self._database.build_participation_table(self._connection)
-            self._database.build_characters_to_character_and_character_table(self._connection)
+            self._database.build_temp_characters_to_character_and_character_table(self._connection)
             self._database.build_participation_to_character_table(self._connection)
             self._database.build_name_to_known_for_title_table(self._connection)
             self._database.build_title_to_genre_table(self._connection)
@@ -266,6 +266,9 @@ def exit_code_for(arguments: Optional[List[str]] = None) -> int:
     try:
         parser = _parser()
         args = parser.parse_args(arguments)
+        if args.command is None:
+            possible_commands_text = ", ".join(command_name.value for command_name in CommandName)
+            parser.error(f"COMMAND must be specified; possible commands are: {possible_commands_text}")
         _check_bulk_size(parser, args)
 
         pimdb_log_level = logging.getLevelName(args.log.upper()) if args.log != "sql" else logging.DEBUG
