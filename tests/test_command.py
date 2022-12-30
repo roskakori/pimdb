@@ -4,9 +4,8 @@ import os
 
 import pytest
 
-from pimdb.command import ImdbDataset
-from pimdb.command import exit_code_for, CommandName
-from tests._common import output_path, sqlite_engine, TESTS_DATA_PATH
+from pimdb.command import CommandName, ImdbDataset, exit_code_for
+from tests._common import TESTS_DATA_PATH, output_path, sqlite_engine
 
 
 def test_can_show_help():

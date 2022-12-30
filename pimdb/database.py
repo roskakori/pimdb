@@ -6,31 +6,30 @@ import json
 import os
 import time
 from enum import Enum
-from typing import Dict, List, Optional, Sequence, Tuple, Union, Callable
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from sqlalchemy import (
-    Column,
     Boolean,
+    Column,
     Float,
+    ForeignKey,
+    Index,
     Integer,
     MetaData,
     String,
     Table,
-    create_engine,
-    ForeignKey,
-    Index,
-    text,
     and_,
+    create_engine,
+    text,
 )
-from sqlalchemy.engine import Engine, Connection
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import select
 from sqlalchemy.sql.functions import coalesce
 from sqlalchemy.sql.selectable import SelectBase
 
 from pimdb.bulk import DEFAULT_BULK_SIZE, BulkInsert, PostgresBulkLoad
-from pimdb.common import log, ImdbDataset, PimdbError, NormalizedTableKey, GzippedTsvReader, IMDB_DATASET_NAMES
-
+from pimdb.common import IMDB_DATASET_NAMES, GzippedTsvReader, ImdbDataset, NormalizedTableKey, PimdbError, log
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
@@ -239,8 +238,8 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
         (
             NormalizedTableKey.EPISODE,
             [
-                Column("title_id", Integer, ForeignKey(f"title.id"), nullable=False, primary_key=True),
-                Column("parent_title_id", Integer, ForeignKey(f"title.id"), nullable=False),
+                Column("title_id", Integer, ForeignKey("title.id"), nullable=False, primary_key=True),
+                Column("parent_title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("season", Integer),
                 Column("episode", Integer),
             ],
@@ -291,9 +290,9 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
         (
             NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER,
             [
-                Column(f"characters", String(_CHARACTERS_LENGTH), nullable=False),
+                Column("characters", String(_CHARACTERS_LENGTH), nullable=False),
                 Column("ordering", Integer, nullable=False),
-                Column(f"character_id", Integer, ForeignKey(f"character.id"), nullable=False),
+                Column("character_id", Integer, ForeignKey("character.id"), nullable=False),
                 Index(index_name_pool.name("index__name__characters__ordering"), "characters", "ordering", unique=True),
             ],
         ),
@@ -680,7 +679,9 @@ class Database:
         category_column = title_principals_table.c.category
         with connection.begin():
             self.build_key_table_from_query(
-                connection, NormalizedTableKey.PROFESSION, select([category_column]).distinct(),
+                connection,
+                NormalizedTableKey.PROFESSION,
+                select([category_column]).distinct(),
             )
 
     def build_participation_table(self, connection: Connection):
@@ -950,7 +951,9 @@ class Database:
     def check_table_has_data(self, connection: Connection, target_table: Table):
         target_table_count = table_count(connection, target_table)
         if target_table_count == 0:
-            log.warning('target table "%s" should contain rows but is empty',)
+            log.warning(
+                'target table "%s" should contain rows but is empty',
+            )
 
     def build_episode_table(self, connection: Connection):
         episode_table = self.normalized_table_for(NormalizedTableKey.EPISODE)
@@ -1100,9 +1103,11 @@ class Database:
             with connection.begin():
                 table_build_status.clear_table()
                 with BulkInsert(connection, title_alias_to_title_alias_type_table, self._bulk_size) as bulk_insert:
-                    for (title_alias_id, title_alias_ordering, raw_title_alias_types,) in connection.execute(
-                        select_title_akas_data
-                    ):
+                    for (
+                        title_alias_id,
+                        title_alias_ordering,
+                        raw_title_alias_types,
+                    ) in connection.execute(select_title_akas_data):
                         for title_alias_type_ordering, title_alias_type_name in enumerate(
                             self.mappable_title_alias_types(raw_title_alias_types), start=1
                         ):

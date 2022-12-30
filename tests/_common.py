@@ -23,7 +23,7 @@ def output_path(name):
 
 
 #: Database engine to use for tests that do not have any special requirements
-#: concerning the database. By default this will use SQLite but you can
+#: concerning the database. By default, this will use SQLite, but you can
 #: override this using the environment variable :envvar:`PIMDB_TEST_DATABASE`.
 DEFAULT_TEST_ENGINE = os.environ.get("PIMDB_TEST_DATABASE", "sqlite:///" + output_path("pimdb_test.db"))
 

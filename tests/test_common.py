@@ -2,8 +2,7 @@
 # All rights reserved. Distributed under the BSD License.
 import gzip
 
-from pimdb.common import camelized_dot_name, TsvDictWriter, GzippedTsvReader
-
+from pimdb.common import GzippedTsvReader, TsvDictWriter, camelized_dot_name
 from tests._common import output_path
 
 

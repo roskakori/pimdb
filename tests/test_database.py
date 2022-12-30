@@ -4,8 +4,8 @@
 import pytest
 from sqlalchemy.sql import select
 
-from pimdb.database import Database, NormalizedTableKey, engined, NamePool
-from tests._common import sqlite_engine, TESTS_DATA_PATH, create_database_with_tables
+from pimdb.database import Database, NamePool, NormalizedTableKey, engined
+from tests._common import TESTS_DATA_PATH, create_database_with_tables, sqlite_engine
 
 _EXPECTED_KEY_VALUES = {"red", "green", "blue"}
 
@@ -19,7 +19,7 @@ def test_can_build_key_table_from_values(memory_database):
     with memory_database.connection() as connection:
         memory_database.build_key_table_from_values(connection, NormalizedTableKey.GENRE, _EXPECTED_KEY_VALUES)
         genre_table = memory_database.normalized_table_for(NormalizedTableKey.GENRE)
-        actual_colors = set(color for color, in connection.execute(select([genre_table.c.name])).fetchall())
+        actual_colors = {color for color, in connection.execute(select([genre_table.c.name])).fetchall()}
     assert actual_colors == _EXPECTED_KEY_VALUES
 
 
@@ -28,7 +28,7 @@ def test_can_build_key_table_from_query(memory_database):
     with memory_database.connection() as connection:
         memory_database.build_key_table_from_query(connection, NormalizedTableKey.PROFESSION, "select name from genre")
         profession_table = memory_database.normalized_table_for(NormalizedTableKey.PROFESSION)
-        actual_colors = set(color for color, in connection.execute(select([profession_table.c.name])).fetchall())
+        actual_colors = {color for color, in connection.execute(select([profession_table.c.name])).fetchall()}
     assert actual_colors == _EXPECTED_KEY_VALUES
 
 
