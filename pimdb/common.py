@@ -7,7 +7,7 @@ import logging
 import os.path
 import time
 from enum import Enum
-from typing import Optional, Generator, Dict, Callable, Tuple, Set, Any
+from typing import Any, Callable, Dict, Generator, Optional, Set, Tuple
 
 import requests
 

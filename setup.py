@@ -25,5 +25,4 @@ import setuptools
 
 from pimdb import __version__
 
-
 setuptools.setup(version=__version__)

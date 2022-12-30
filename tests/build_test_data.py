@@ -3,10 +3,10 @@
 import argparse
 import logging
 import os
-from typing import List, Optional, Set, Dict, Any
+from typing import Any, Dict, List, Optional, Set
 
 from pimdb import __version__
-from pimdb.common import GzippedTsvReader, TsvDictWriter, ImdbDataset, IMDB_DATASET_TO_KEY_COLUMNS_MAP
+from pimdb.common import IMDB_DATASET_TO_KEY_COLUMNS_MAP, GzippedTsvReader, ImdbDataset, TsvDictWriter
 
 TEST_NCONSTS = [
     # "nm0000616",  # Eric Roberts
@@ -78,7 +78,9 @@ def extracted_tconsts(
     filtered_values: Set[str],
 ) -> Set[str]:
     tsv_reader = gzipped_tsv_reader(
-        gzipped_tsv_folder, dataset, filtered_names_to_values_map={filtered_column_name: filtered_values},
+        gzipped_tsv_folder,
+        dataset,
+        filtered_names_to_values_map={filtered_column_name: filtered_values},
     )
     result = {name_to_value_map[result_column_name] for name_to_value_map in tsv_reader.column_names_to_value_maps()}
     return result

@@ -1,7 +1,7 @@
 """Database bulk operations."""
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
-from typing import Any, Dict, IO, Optional
+from typing import IO, Any, Dict, Optional
 
 from sqlalchemy import Table
 from sqlalchemy.engine import Connection, Engine

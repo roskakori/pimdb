@@ -4,13 +4,13 @@ import os
 
 import pytest
 
-from pimdb.common import ImdbDataset
 from pimdb.bulk import PostgresBulkLoad
+from pimdb.common import ImdbDataset
 from tests._common import (
-    create_database_with_tables,
     DEFAULT_TEST_ENGINE,
     IS_POSTGRES_DEFAULT_TEST_ENGINE,
     TESTS_DATA_PATH,
+    create_database_with_tables,
 )
 
 
