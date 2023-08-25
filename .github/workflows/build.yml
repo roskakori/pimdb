@@ -47,7 +47,7 @@ jobs:
           PIMDB_TEST_DATABASE: "postgresql+psycopg2://postgres:ci@localhost:5432/postgres"
         run: |
           pytest --cov=pimdb --cov=tests --verbose
-      - name: Upload test covarage to Coveralls
+      - name: Upload test coverage to Coveralls
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
