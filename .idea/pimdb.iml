@@ -13,7 +13,7 @@
       <excludeFolder url="file://$MODULE_DIR$/docs/_build" />
       <excludeFolder url="file://$MODULE_DIR$/tests/output" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.10 (pimdb)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.11 (pimdb)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TestRunnerService">
