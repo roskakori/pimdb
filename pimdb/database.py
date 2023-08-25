@@ -5,8 +5,9 @@ import gzip
 import json
 import os
 import time
+from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Optional, Union
 
 from sqlalchemy import (
     Boolean,
@@ -104,7 +105,7 @@ def database_system_from_engine_info(engine_info: str) -> DatabaseSystem:
         return DatabaseSystem.OTHER
 
 
-def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
+def imdb_dataset_table_infos() -> list[tuple[ImdbDataset, list[Column]]]:
     """SQL tables that represent a direct copy of a TSV file (excluding duplicates)"""
     return [
         (
@@ -187,7 +188,7 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
 
 def _key_table_info(
     normalized_table_key: NormalizedTableKey, name_length: int
-) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
+) -> tuple[NormalizedTableKey, list[Union[Column, Index]]]:
     assert isinstance(normalized_table_key, NormalizedTableKey)
     return (
         normalized_table_key,
@@ -203,7 +204,7 @@ def _ordered_relation_table_info(
     table_to_create: NormalizedTableKey,
     from_table: NormalizedTableKey,
     to_table: NormalizedTableKey,
-) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
+) -> tuple[NormalizedTableKey, list[Union[Column, Index]]]:
     """
     Information required to create a table representing an ordered relation
     pointing from ``from_table`` to ``to_table``, including the necessary
@@ -232,7 +233,7 @@ def _ordered_relation_table_info(
     )
 
 
-def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableKey, List[Union[Column, Index]]]]:
+def report_table_infos(index_name_pool: NamePool) -> list[tuple[NormalizedTableKey, list[Union[Column, Index]]]]:
     return [
         _key_table_info(NormalizedTableKey.CHARACTER, _CHARACTER_LENGTH),
         (
@@ -342,8 +343,8 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
 
 
 def typed_column_to_value_map(
-    table: Table, column_name_to_raw_value_map: Dict[str, str]
-) -> Dict[str, Optional[Union[bool, float, int, str]]]:
+    table: Table, column_name_to_raw_value_map: dict[str, str]
+) -> dict[str, Optional[Union[bool, float, int, str]]]:
     result = {}
     for column in table.columns:
         raw_value = column_name_to_raw_value_map[column.name]
@@ -488,7 +489,7 @@ class Database:
         return self._metadata
 
     @property
-    def imdb_dataset_to_table_map(self) -> Dict[ImdbDataset, Table]:
+    def imdb_dataset_to_table_map(self) -> dict[ImdbDataset, Table]:
         assert self._imdb_dataset_to_table_map is not None, f"call {self.create_imdb_dataset_tables.__name__} first"
         return self._imdb_dataset_to_table_map
 
@@ -517,7 +518,7 @@ class Database:
         normalized_table_key: NormalizedTableKey,
         natural_key_column: str = "name",
         id_column: str = "id",
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         table = self.normalized_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
@@ -603,7 +604,7 @@ class Database:
             obsolete_table = Table(obsolete_table_name, self._metadata, Column("_dummy", Integer))
             obsolete_table.drop(self._engine, checkfirst=True)
 
-    def key_columns(self, imdb_dataset: ImdbDataset) -> Tuple:
+    def key_columns(self, imdb_dataset: ImdbDataset) -> tuple:
         return tuple(
             column.name for column in self.imdb_dataset_to_table_map[imdb_dataset].columns if column.primary_key
         )
@@ -1015,7 +1016,7 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     @functools.lru_cache(None)
-    def mappable_title_alias_types(self, raw_title_types: str) -> List[str]:
+    def mappable_title_alias_types(self, raw_title_types: str) -> list[str]:
         # TODO: Make inner function of build_title_alias_to_title_alias_type_table().
         result = []
         if raw_title_types:

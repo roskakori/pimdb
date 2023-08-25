@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -162,7 +162,7 @@ class _DownloadCommand:
             download_imdb_dataset(ImdbDataset(dataset_name_to_download), target_path, self._only_if_newer)
 
 
-def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.Namespace) -> List[str]:
+def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[str]:
     def _check_special_name_is_only_name():
         if len(args.names) >= 2:
             parser.error(f'if NAME "{_ALL_NAME}" is specified, it must be the only NAME')
@@ -248,7 +248,7 @@ _COMMAND_NAME_TO_COMMAND_CLASS_MAP = {
 }
 
 
-def exit_code_for(arguments: Optional[List[str]] = None) -> int:
+def exit_code_for(arguments: Optional[list[str]] = None) -> int:
     """
     Exit code for running the command line with the specified ``arguments``,
     or ``sys.argv``if no arguments are specified.

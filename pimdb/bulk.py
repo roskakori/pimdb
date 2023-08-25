@@ -1,7 +1,7 @@
 """Database bulk operations."""
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
-from typing import IO, Any, Dict, Optional
+from typing import IO, Any, Optional
 
 from sqlalchemy import Table
 from sqlalchemy.engine import Connection, Engine
@@ -38,7 +38,7 @@ class BulkInsert:
         self._data = []
         self._count = 0
 
-    def add(self, data: Dict[str, Optional[Any]]):
+    def add(self, data: dict[str, Optional[Any]]):
         self._data.append(data)
         self._count += 1
         if len(self._data) >= self._bulk_size:

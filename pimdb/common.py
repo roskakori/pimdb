@@ -6,8 +6,9 @@ import json
 import logging
 import os.path
 import time
+from collections.abc import Generator
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, Optional, Set, Tuple
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -186,10 +187,10 @@ class GzippedTsvReader:
     def __init__(
         self,
         gzipped_tsv_path: str,
-        key_columns: Tuple[str],
+        key_columns: tuple[str],
         indicate_progress: Optional[Callable[[int, int], None]] = None,
         seconds_between_progress_update: float = 3.0,
-        filtered_name_to_values_map: Optional[Dict[str, Set[str]]] = None,
+        filtered_name_to_values_map: Optional[dict[str, set[str]]] = None,
     ):
         self._gzipped_tsv_path = gzipped_tsv_path
         self._row_number = None
@@ -217,7 +218,7 @@ class GzippedTsvReader:
     def duplicate_count(self) -> int:
         return self._duplicate_count
 
-    def column_names_to_value_maps(self) -> Generator[Dict[str, str], None, None]:
+    def column_names_to_value_maps(self) -> Generator[dict[str, str], None, None]:
         log.info('  reading IMDb dataset file "%s"', self.gzipped_tsv_path)
         with gzip.open(self.gzipped_tsv_path, "rt", encoding="utf-8", newline="") as tsv_file:
             last_progress_time = time.time()
@@ -278,7 +279,7 @@ class TsvDictWriter:
         assert self._line_number is not None
         return self._line_number
 
-    def write(self, name_to_value_map: Dict[str, Any]):
+    def write(self, name_to_value_map: dict[str, Any]):
         if self._column_names is None:
             self._column_names = list(name_to_value_map.keys())
             self._line_number = 1
