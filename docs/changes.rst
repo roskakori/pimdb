@@ -1,6 +1,11 @@
 Changes
 =======
 
+Version 0.2.4, 2020-08-xx
+
+* Remove support for Python 3.7 and 3.8. Technically 3.8 is still maintained
+  but the current requests package already requires 3.9.
+
 Version 0.2.3, 2020-05-02
 
 * Fixed :py:exc:`ForeignKeyViolation` when building normalized temporary table
