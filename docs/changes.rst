@@ -1,7 +1,7 @@
 Changes
 =======
 
-Version 0.2.4, 2020-08-25
+Version 0.3.0, 2024-05-13
 
 * Fix "Column length too big" errors by switching from fixed length
   :py:class:`String` field to variable :py:class:`Text`. The actual
@@ -23,7 +23,7 @@ Version 0.2.2, 2020-04-26
 * Added NAME ``normalized`` as option for :command:`pimdb transfer` to
   transfer only the datasets needed by :command:`pimdb build`.
 * Removed redundant normalized tables ``title_to(director|writer)``. Use
-  relation ``praticipation.profession_id`` to limit query results to certain
+  relation ``participation.profession_id`` to limit query results to certain
   professions.
 * Added documentation chapter explaining the :doc:`datamodel` including
   example SQL queries and overview ER diagrams.
