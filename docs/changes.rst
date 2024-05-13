@@ -6,6 +6,7 @@ Version 0.3.0, 2024-05-13
 * Fix "Column length too big" errors by switching from fixed length
   :py:class:`String` field to variable :py:class:`Text`. The actual
   limit however depends on the database.
+* Add support for Python 3.12
 * Remove support for Python 3.7 and 3.8. Technically 3.8 is still maintained
   but the current requests package already requires 3.9.
 
