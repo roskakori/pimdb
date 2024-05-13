@@ -10,9 +10,9 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     env:
-      MAIN_PYTHON_VERSION: "3.10"
+      MAIN_PYTHON_VERSION: "3.12"  # Same as Ubuntu 24 LTS
 
     services:
       postgres:
