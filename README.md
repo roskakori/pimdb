@@ -31,7 +31,7 @@ $ pip install pimdb
 
 ### Downloading datasets
 
-To download the current IMDb datsets to the current folder, run:
+To download the current IMDb datasets to the current folder, run:
 
 ```bash
 pimdb download all
@@ -49,10 +49,9 @@ folder, run:
 pimdb transfer all
 ```
 
-(This will take a while. On a reasonably modern laptop with a local database
-you can expect about 2 hours).
+This will take several hours, on a MacBook Pro M1 about 11 hours.
 
-The resulting database contains one tables for each dataset. The table names
+The resulting database contains one table for each dataset. The table names
 are PascalCase variants of the dataset name. For example, the date from the
 dataset `title.basics` are stored in the table `TitleBasics`. The column names
 in the table match the names from the datasets, for example
@@ -109,6 +108,7 @@ specify the same value for `build` in order to find the source data. These table
 generally use snake_case names for both tables and columns, for example
 `title_allias.is_original`.
 
+This will take some time, on a MacBook Pro M1 about 30 minutes.
 
 ## Querying normalized tables
 
