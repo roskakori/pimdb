@@ -87,23 +87,23 @@ PostgreSQL database in a docker container:
 
    .. code-block:: bash
 
-        docker-compose --file tests/docker-compose.yml up postgres
+        docker compose --file tests/compose.yaml up postgres
 
 3. Create the database (possibly using :command:`sudo`):
 
    .. code-block:: bash
 
-        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb"
+        docker exec -e POSTGRES_PASSWORD=tEst.123 -it pimdb_postgres  psql --username postgres --command "create database pimdb"
 
    If you want a separate database for the unit tests:
 
-        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb_test"
+        docker exec -e POSTGRES_PASSWORD=tEst.123 -it pimdb_postgres psql --username postgres --command "create database pimdb_test"
 
 4. Run :command:`pimdb`:
 
    .. code-block:: bash
 
-        pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres@localhost:5439/pimdb all
+        pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres:tEst.123@localhost:5439/pimdb all
 
 
 Documentation
