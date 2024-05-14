@@ -134,3 +134,22 @@ the code without performing a commit, run:
 In particular, this applies `black <https://black.readthedocs.io/en/stable/>`_,
 `flake8 <https://flake8.pycqa.org/>`_ and
 `isort <https://pypi.org/project/isort/>`_.
+
+
+Add a new release
+-----------------
+
+Build and check the wheel::
+
+  $ rm dist/*.whl
+  $ python3 setup.py bdist_wheel
+  $ twine check dist/*.whl
+
+Tag a release (simply replace ``0.x.x`` with the current version number)::
+
+  $ git tag -a -m "Tag version 0.x.x" v0.x.x
+  $ git push --tags
+
+Upload release to PyPI::
+
+  $ twine upload dist
