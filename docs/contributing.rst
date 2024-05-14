@@ -87,23 +87,23 @@ PostgreSQL database in a docker container:
 
    .. code-block:: bash
 
-        docker-compose --file tests/docker-compose.yml up postgres
+        docker compose --file tests/compose.yaml up postgres
 
 3. Create the database (possibly using :command:`sudo`):
 
    .. code-block:: bash
 
-        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb"
+        docker exec -e POSTGRES_PASSWORD=tEst.123 -it pimdb_postgres  psql --username postgres --command "create database pimdb"
 
    If you want a separate database for the unit tests:
 
-        docker exec -it pimdb_postgres psql --username postgres --command "create database pimdb_test"
+        docker exec -e POSTGRES_PASSWORD=tEst.123 -it pimdb_postgres psql --username postgres --command "create database pimdb_test"
 
 4. Run :command:`pimdb`:
 
    .. code-block:: bash
 
-        pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres@localhost:5439/pimdb all
+        pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres:tEst.123@localhost:5439/pimdb all
 
 
 Documentation
@@ -134,3 +134,22 @@ the code without performing a commit, run:
 In particular, this applies `black <https://black.readthedocs.io/en/stable/>`_,
 `flake8 <https://flake8.pycqa.org/>`_ and
 `isort <https://pypi.org/project/isort/>`_.
+
+
+Add a new release
+-----------------
+
+Build and check the wheel::
+
+  $ rm dist/*.whl
+  $ python3 setup.py bdist_wheel
+  $ twine check dist/*.whl
+
+Tag a release (simply replace ``0.x.x`` with the current version number)::
+
+  $ git tag -a -m "Tag version 0.x.x" v0.x.x
+  $ git push --tags
+
+Upload release to PyPI::
+
+  $ twine upload dist
