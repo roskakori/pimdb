@@ -197,8 +197,10 @@ dmypy.json
 # End of https://www.gitignore.io/api/python,pycharm
 
 .DS_Store
+.pimdb_last_modified.json
 /venv/
 /tests/data/*.tsv.gz
 /tests/output/
 *.db
 *.db-journal
+*.tsv.gz

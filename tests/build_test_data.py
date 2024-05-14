@@ -3,7 +3,7 @@
 import argparse
 import logging
 import os
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 from pimdb import __version__
 from pimdb.common import IMDB_DATASET_TO_KEY_COLUMNS_MAP, GzippedTsvReader, ImdbDataset, TsvDictWriter
@@ -25,7 +25,7 @@ _DEFAULT_TARGET_FOLDER = os.path.join(os.path.dirname(__file__), "data")
 log = logging.getLogger("pimdb.tests." + os.path.splitext(os.path.basename(__file__))[0])
 
 
-def _parsed_arguments(args: Optional[List[str]]) -> argparse.Namespace:
+def _parsed_arguments(args: Optional[list[str]]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "create filtered IMDb datasets that contain only a selected few names, "
@@ -55,7 +55,7 @@ def _parsed_arguments(args: Optional[List[str]]) -> argparse.Namespace:
 
 
 def gzipped_tsv_reader(
-    folder: str, imdb_dataset: ImdbDataset, filtered_names_to_values_map: Dict[str, Any]
+    folder: str, imdb_dataset: ImdbDataset, filtered_names_to_values_map: dict[str, Any]
 ) -> GzippedTsvReader:
     return GzippedTsvReader(
         os.path.join(folder, imdb_dataset.filename),
@@ -75,8 +75,8 @@ def extracted_tconsts(
     dataset: ImdbDataset,
     result_column_name: str,
     filtered_column_name: str,
-    filtered_values: Set[str],
-) -> Set[str]:
+    filtered_values: set[str],
+) -> set[str]:
     tsv_reader = gzipped_tsv_reader(
         gzipped_tsv_folder,
         dataset,
@@ -86,7 +86,7 @@ def extracted_tconsts(
     return result
 
 
-def main(args: Optional[List[str]] = None):
+def main(args: Optional[list[str]] = None):
     arguments = _parsed_arguments(args)
     log.info("collecting principals tconsts to filter for")
     principal_tconsts = (

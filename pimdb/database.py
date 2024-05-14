@@ -5,8 +5,9 @@ import gzip
 import json
 import os
 import time
+from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Optional, Union
 
 from sqlalchemy import (
     Boolean,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     and_,
     create_engine,
     text,
@@ -33,31 +35,8 @@ from pimdb.common import IMDB_DATASET_NAMES, GzippedTsvReader, ImdbDataset, Norm
 
 _TCONST_LENGTH = 12  # current maximum: 10
 _NCONST_LENGTH = 12  # current maximum: 10
-_TITLE_LENGTH = 1024  # current maximum: 831 (in title.akas.title)
-_NAME_LENGTH = 160  # current maximum: 105
-_GENRE_LENGTH = 16
-_GENRE_COUNT = 4
-_REGION_LENGTH = 4
-_LANGUAGE_LENGTH = 4
-_CREW_COUNT = 2048  # current maximum: 1180
-_PROFESSION_LENGTH = 32  # current maximum (from title.principals.category): 19
-_PROFESSION_COUNT = 3
-_JOB_LENGTH = 512  # current maximum: 286
-_CHARACTER_LENGTH = 1024  # current maximum: 459
-_CHARACTERS_LENGTH = 1024  # current maximum: 463
-_KNOWN_FOR_TITLES_LENGTH = (_TCONST_LENGTH + 1) * 20 - 1  # current maximum: 159 resp. 15 titles
-
-#: The "title_akas.attributes" field is a mess.
-_ATTRIBUTES_LENGTH = 128
 
 IMDB_TITLE_ALIAS_TYPES = ["alternative", "dvd", "festival", "tv", "video", "working", "original", "imdbDisplay"]
-
-_ALIAS_TYPE_LENGTH = max(len(item) for item in IMDB_TITLE_ALIAS_TYPES)
-
-#: The "title_akas.types" field is a mess.
-_ALIAS_TYPES_LENGTH = 128
-
-_TITLE_TYPE_LENGTH = 24  # current maximum: 12
 
 
 class NamePool:
@@ -104,32 +83,32 @@ def database_system_from_engine_info(engine_info: str) -> DatabaseSystem:
         return DatabaseSystem.OTHER
 
 
-def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
+def imdb_dataset_table_infos() -> list[tuple[ImdbDataset, list[Column]]]:
     """SQL tables that represent a direct copy of a TSV file (excluding duplicates)"""
     return [
         (
             ImdbDataset.TITLE_BASICS,
             [
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-                Column("titleType", String(_TITLE_TYPE_LENGTH), nullable=False),
-                Column("primaryTitle", String(_TITLE_LENGTH)),
-                Column("originalTitle", String(_TITLE_LENGTH)),
+                Column("titleType", Text, nullable=False),
+                Column("primaryTitle", Text),
+                Column("originalTitle", Text),
                 Column("isAdult", Boolean, nullable=False),
                 Column("startYear", Integer),
                 Column("endYear", Integer),
                 Column("runtimeMinutes", Integer),
-                Column("genres", String((_GENRE_LENGTH + 1) * _GENRE_COUNT - 1)),
+                Column("genres", Text),
             ],
         ),
         (
             ImdbDataset.NAME_BASICS,
             [
                 Column("nconst", String(_NCONST_LENGTH), nullable=False, primary_key=True),
-                Column("primaryName", String(_NAME_LENGTH), nullable=False),
+                Column("primaryName", Text, nullable=False),
                 Column("birthYear", Integer),
                 Column("deathYear", Integer),
-                Column("primaryProfession", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
-                Column("knownForTitles", String(_KNOWN_FOR_TITLES_LENGTH)),
+                Column("primaryProfession", Text),
+                Column("knownForTitles", Text),
             ],
         ),
         (
@@ -137,11 +116,11 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
             [
                 Column("titleId", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("ordering", Integer, nullable=False, primary_key=True),
-                Column("title", String(_TITLE_LENGTH)),
-                Column("region", String(_REGION_LENGTH)),
-                Column("language", String(_LANGUAGE_LENGTH)),
-                Column("types", String(_ALIAS_TYPES_LENGTH)),
-                Column("attributes", String(_ATTRIBUTES_LENGTH)),
+                Column("title", Text),
+                Column("region", Text),
+                Column("language", Text),
+                Column("types", Text),
+                Column("attributes", Text),
                 # NOTE: isOriginalTitle sometimes actually is null.
                 Column("isOriginalTitle", Boolean),
             ],
@@ -150,8 +129,8 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
             ImdbDataset.TITLE_CREW,
             [
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
-                Column("directors", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
-                Column("writers", String((_NCONST_LENGTH + 1) * _CREW_COUNT - 1)),
+                Column("directors", Text),
+                Column("writers", Text),
             ],
         ),
         (
@@ -169,15 +148,15 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
                 Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("ordering", Integer, nullable=False, primary_key=True),
                 Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False),
-                Column("category", String(_PROFESSION_LENGTH), nullable=False),
-                Column("job", String(_JOB_LENGTH)),
-                Column("characters", String(_CHARACTERS_LENGTH)),
+                Column("category", Text, nullable=False),
+                Column("job", Text),
+                Column("characters", Text),
             ],
         ),
         (
             ImdbDataset.TITLE_RATINGS,
             [
-                Column("tconst", String, nullable=False, primary_key=True),
+                Column("tconst", String(_TCONST_LENGTH), nullable=False, primary_key=True),
                 Column("averageRating", Float, nullable=False),
                 Column("numVotes", Integer, nullable=False),
             ],
@@ -185,15 +164,13 @@ def imdb_dataset_table_infos() -> List[Tuple[ImdbDataset, List[Column]]]:
     ]
 
 
-def _key_table_info(
-    normalized_table_key: NormalizedTableKey, name_length: int
-) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
+def _key_table_info(normalized_table_key: NormalizedTableKey) -> tuple[NormalizedTableKey, list[Union[Column, Index]]]:
     assert isinstance(normalized_table_key, NormalizedTableKey)
     return (
         normalized_table_key,
         [
             Column("id", Integer, nullable=False, primary_key=True),
-            Column("name", String(name_length), index=True, nullable=False, unique=True),
+            Column("name", Text, index=True, nullable=False, unique=True),
         ],
     )
 
@@ -203,7 +180,7 @@ def _ordered_relation_table_info(
     table_to_create: NormalizedTableKey,
     from_table: NormalizedTableKey,
     to_table: NormalizedTableKey,
-) -> Tuple[NormalizedTableKey, List[Union[Column, Index]]]:
+) -> tuple[NormalizedTableKey, list[Union[Column, Index]]]:
     """
     Information required to create a table representing an ordered relation
     pointing from ``from_table`` to ``to_table``, including the necessary
@@ -232,9 +209,9 @@ def _ordered_relation_table_info(
     )
 
 
-def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableKey, List[Union[Column, Index]]]]:
+def report_table_infos(index_name_pool: NamePool) -> list[tuple[NormalizedTableKey, list[Union[Column, Index]]]]:
     return [
-        _key_table_info(NormalizedTableKey.CHARACTER, _CHARACTER_LENGTH),
+        _key_table_info(NormalizedTableKey.CHARACTER),
         (
             NormalizedTableKey.EPISODE,
             [
@@ -244,18 +221,18 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
                 Column("episode", Integer),
             ],
         ),
-        _key_table_info(NormalizedTableKey.GENRE, _GENRE_LENGTH),
-        _key_table_info(NormalizedTableKey.PROFESSION, _PROFESSION_LENGTH),
-        _key_table_info(NormalizedTableKey.TITLE_TYPE, _TITLE_TYPE_LENGTH),
+        _key_table_info(NormalizedTableKey.GENRE),
+        _key_table_info(NormalizedTableKey.PROFESSION),
+        _key_table_info(NormalizedTableKey.TITLE_TYPE),
         (
             NormalizedTableKey.NAME,
             [
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("nconst", String(_NCONST_LENGTH), index=True, nullable=False, unique=True),
-                Column("primary_name", String(_TITLE_LENGTH), nullable=False),
+                Column("primary_name", Text, nullable=False),
                 Column("birth_year", Integer),
                 Column("death_year", Integer),
-                Column("primary_professions", String((_PROFESSION_LENGTH + 1) * _PROFESSION_COUNT - 1)),
+                Column("primary_professions", Text),
             ],
         ),
         _ordered_relation_table_info(
@@ -272,7 +249,7 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
                 Column("ordering", Integer, nullable=False),
                 Column("name_id", Integer, ForeignKey("name.id"), index=True, nullable=False),
                 Column("profession_id", Integer, ForeignKey("profession.id")),
-                Column("job", String(_JOB_LENGTH)),
+                Column("job", Text),
                 Index(
                     index_name_pool.name("index__participation__title_id__ordering"),
                     "title_id",
@@ -290,7 +267,7 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
         (
             NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER,
             [
-                Column("characters", String(_CHARACTERS_LENGTH), nullable=False),
+                Column("characters", Text, nullable=False),
                 Column("ordering", Integer, nullable=False),
                 Column("character_id", Integer, ForeignKey("character.id"), nullable=False),
                 Index(index_name_pool.name("index__name__characters__ordering"), "characters", "ordering", unique=True),
@@ -302,8 +279,8 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("tconst", String(_TCONST_LENGTH), index=True, nullable=False, unique=True),
                 Column("title_type_id", Integer, ForeignKey("title_type.id"), nullable=False),
-                Column("primary_title", String(_TITLE_LENGTH), nullable=False),
-                Column("original_title", String(_TITLE_LENGTH), nullable=False),
+                Column("primary_title", Text, nullable=False),
+                Column("original_title", Text, nullable=False),
                 Column("is_adult", Boolean, nullable=False),
                 Column("start_year", Integer),
                 Column("end_year", Integer),
@@ -318,9 +295,9 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
                 Column("id", Integer, nullable=False, primary_key=True),
                 Column("title_id", Integer, ForeignKey("title.id"), nullable=False),
                 Column("ordering", Integer, nullable=False),
-                Column("title", String(_TITLE_LENGTH), nullable=False),
-                Column("region_code", String(_REGION_LENGTH)),
-                Column("language_code", String(_LANGUAGE_LENGTH)),
+                Column("title", Text, nullable=False),
+                Column("region_code", Text),
+                Column("language_code", Text),
                 # NOTE: is_original_title sometimes actually is null.
                 Column("is_original_title", Boolean),
                 Index(
@@ -334,7 +311,7 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
             NormalizedTableKey.TITLE_ALIAS,
             NormalizedTableKey.TITLE_ALIAS_TYPE,
         ),
-        _key_table_info(NormalizedTableKey.TITLE_ALIAS_TYPE, _ALIAS_TYPE_LENGTH),
+        _key_table_info(NormalizedTableKey.TITLE_ALIAS_TYPE),
         _ordered_relation_table_info(
             index_name_pool, NormalizedTableKey.TITLE_TO_GENRE, NormalizedTableKey.TITLE, NormalizedTableKey.GENRE
         ),
@@ -342,8 +319,8 @@ def report_table_infos(index_name_pool: NamePool) -> List[Tuple[NormalizedTableK
 
 
 def typed_column_to_value_map(
-    table: Table, column_name_to_raw_value_map: Dict[str, str]
-) -> Dict[str, Optional[Union[bool, float, int, str]]]:
+    table: Table, column_name_to_raw_value_map: dict[str, str]
+) -> dict[str, Optional[Union[bool, float, int, str]]]:
     result = {}
     for column in table.columns:
         raw_value = column_name_to_raw_value_map[column.name]
@@ -488,7 +465,7 @@ class Database:
         return self._metadata
 
     @property
-    def imdb_dataset_to_table_map(self) -> Dict[ImdbDataset, Table]:
+    def imdb_dataset_to_table_map(self) -> dict[ImdbDataset, Table]:
         assert self._imdb_dataset_to_table_map is not None, f"call {self.create_imdb_dataset_tables.__name__} first"
         return self._imdb_dataset_to_table_map
 
@@ -517,7 +494,7 @@ class Database:
         normalized_table_key: NormalizedTableKey,
         natural_key_column: str = "name",
         id_column: str = "id",
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         table = self.normalized_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
@@ -603,7 +580,7 @@ class Database:
             obsolete_table = Table(obsolete_table_name, self._metadata, Column("_dummy", Integer))
             obsolete_table.drop(self._engine, checkfirst=True)
 
-    def key_columns(self, imdb_dataset: ImdbDataset) -> Tuple:
+    def key_columns(self, imdb_dataset: ImdbDataset) -> tuple:
         return tuple(
             column.name for column in self.imdb_dataset_to_table_map[imdb_dataset].columns if column.primary_key
         )
@@ -1015,7 +992,7 @@ class Database:
                     table_build_status.log_added_rows(bulk_insert.count)
 
     @functools.lru_cache(None)
-    def mappable_title_alias_types(self, raw_title_types: str) -> List[str]:
+    def mappable_title_alias_types(self, raw_title_types: str) -> list[str]:
         # TODO: Make inner function of build_title_alias_to_title_alias_type_table().
         result = []
         if raw_title_types:
