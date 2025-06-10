@@ -14,7 +14,8 @@ follows:
        $ git clone https://github.com/roskakori/pimdb.git
        $ cd pimdb
 
-2. Create and activate a virtual environment:
+2. Install `uv <https://docs.astral.sh/uv/>`_:
+3. Create and activate a virtual environment:
 
    .. code-block:: bash
 
