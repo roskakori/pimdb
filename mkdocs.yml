@@ -3,7 +3,7 @@ site_description: Build a database from IMDb datasets
 site_author: Thomas Aglassinger
 repo_url: https://github.com/roskakori/pimdb
 repo_name: roskakori/pimdb
-edit_uri: edit/main/docs/
+edit_uri: edit/master/docs/
 site_url: https://pimdb.readthedocs.io/
 copyright: Copyright &copy; 2020-2025 Thomas Aglassinger
 

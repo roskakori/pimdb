@@ -16,7 +16,7 @@ follows:
 3. Create and activate a virtual environment:
 
    ```bash
-   $ uv sync
+   $ uv sync --all-groups
    $ . venv/bin/activate
    ```
 
@@ -25,7 +25,6 @@ follows:
    ```bash
    $ uv run pre-commit install
    ```
-
 
 ## Testing
 
@@ -63,7 +62,6 @@ small test datasets. Use the environment variable
 export PIMDB_FULL_TEST_DATABASE="sqlite:////Users/me/Development/pimdb/pimdb.db"
 ```
 
-
 ## Test run with PostgreSQL {#test-run-with-postgres}
 
 While the test suite uses SQLite, you can test run `pimdb` on a
@@ -94,7 +92,6 @@ PostgreSQL database in a docker container:
    pimdb transfer --dataset-folder tests/data --database postgresql+psycopg2://postgres:tEst.123@localhost:5439/pimdb all
    ```
 
-
 ## Documentation
 
 To build the documentation in HTML format:
@@ -112,7 +109,6 @@ $ uv run mkdocs serve
 
 Then open http://127.0.0.1:8000/ in your browser.
 
-
 ## Coding guidelines
 
 The code throughout uses a natural naming schema avoiding abbreviations, even
@@ -129,7 +125,6 @@ $ uv run pre-commit run --all-files
 In particular, this applies [black](https://black.readthedocs.io/en/stable/),
 [flake8](https://flake8.pycqa.org/) and
 [isort](https://pypi.org/project/isort/).
-
 
 ## Add a new release
 

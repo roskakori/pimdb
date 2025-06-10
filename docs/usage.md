@@ -10,7 +10,6 @@ pimdb download all
 
 (This downloads about 1 GB of data and might take a couple of minutes).
 
-
 ## Transferring datasets into tables
 
 To import them in a local SQLite database `pimdb.db` located in the current
@@ -30,7 +29,6 @@ in the table match the names from the datasets, for example
 `TitleBasics.primaryTitle`. A short description of all the datasets and
 columns can be found at the download page for the
 [IMDb datasets](https://www.imdb.com/interfaces/).
-
 
 ## Querying tables
 
@@ -59,7 +57,6 @@ You can also store a query in a text file and specify the path:
 pimdb query --file some-select.sql >some.tsv
 ```
 
-
 ## Databases other than SQLite
 
 Optionally you can specify a different database using the `--database` option
@@ -77,7 +74,6 @@ database:
 ```bash
 pimdb transfer --database "postgresql://user:password@localhost:5432/mydatabase" all
 ```
-
 
 ## Building normalized tables
 
@@ -104,7 +100,6 @@ If you did specify a `--database` for the `transfer` command before, you have to
 specify the same value for `build` in order to find the source data. These tables
 generally use snake_case names for both tables and columns, for example
 `title_allias.is_original`.
-
 
 ## Querying normalized tables
 
@@ -152,7 +147,6 @@ order by
     title.start_year,
     title.primary_title
 ```
-
 
 ## Reference
 

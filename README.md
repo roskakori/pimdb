@@ -5,7 +5,6 @@ the essential parts of the
 [Internet Movie Database](https://imdb.com) (IMDb) based in the TSV files
 available from [IMDb datasets](https://www.imdb.com/interfaces/).
 
-
 ## License
 
 The [IMDb datasets](https://www.imdb.com/interfaces/) are only available for
@@ -14,7 +13,6 @@ personal and non-commercial use. For details refer to the previous link.
 Pimdb is open source and distributed under the
 [BSD license](https://opensource.org/licenses/BSD-3-Clause). The source
 code is available from https://github.com/roskakori/pimdb.
-
 
 ## Installation
 
@@ -25,9 +23,7 @@ installed using:
 $ pip install pimdb
 ```
 
-
 ## Quick start
-
 
 ### Downloading datasets
 
@@ -38,7 +34,6 @@ pimdb download all
 ```
 
 (This downloads about 1 GB of data and might take a couple of minutes).
-
 
 ### Transferring datasets into tables
 
@@ -63,7 +58,6 @@ Optionally you can specify a different database using the `--database` option
 with an
 [SQLAlchemy engine configuration](https://docs.sqlalchemy.org/en/13/core/engines.html).
 
-
 ### Querying tables
 
 To query the tables, you can use any database tool that supports SQLite, for
@@ -85,7 +79,6 @@ You can also run an SQL statement stored in a file:
 pimdb query --file some.sql
 ```
 
-
 ### Building normalized tables
 
 The tables so far are almost verbatim copies of the IMDb datasets with the
@@ -103,6 +96,7 @@ derived from the dataset tables by running:
 ```bash
 pimdb build
 ```
+
 If you did specify a `--database` for the `transfer` command before, you have to
 specify the same value for `build` in order to find the source data. These tables
 generally use snake_case names for both tables and columns, for example
@@ -138,16 +132,15 @@ For more information on which tables are available on how they are related
 read the chapter about the
 [pimdb data model](https://pimdb.readthedocs.io/en/latest/datamodel.html).
 
-
 ## Where to go from here
 
 Pimdb's [online documentation](https://pimdb.readthedocs.io/) describes all
 aspects in further detail. You might find the following chapters of particular
 interest:
 
-* [Usage](https://pimdb.readthedocs.io/en/latest/usage.html): all command line
+- [Usage](https://pimdb.readthedocs.io/en/latest/usage.html): all command line
   options explained
-* [Data model](https://pimdb.readthedocs.io/en/latest/datamodel.html):
+- [Data model](https://pimdb.readthedocs.io/en/latest/datamodel.html):
   available tables and example SQL queries
-* [Contributing](https://pimdb.readthedocs.io/en/latest/contributing.html):
+- [Contributing](https://pimdb.readthedocs.io/en/latest/contributing.html):
   obtaining the source code and building the project locally
