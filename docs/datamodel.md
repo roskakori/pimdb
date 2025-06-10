@@ -13,7 +13,6 @@ several data quality and naming issues cleaned up.
 This chapter describes both kinds of tables and gives examples on how to
 query them.
 
-
 ## Dataset tables
 
 The data are transferred "as is" except that **duplicates** are skipped. Most
@@ -71,7 +70,6 @@ You can add your own indexes at any time but be aware that too many indexes
 might slow down future runs of `pimdb transfer`. Also they take more
 space. And finally, if you use the command line option `--drop`, they are
 removed and you will have to create them again.
-
 
 ## Normalized tables
 
@@ -134,11 +132,11 @@ where
 
 The output would be:
 
-| tconst     | primary_title              | genre.name |
-|------------|----------------------------|------------|
-| tt2535470  | Wyrmwood: Road of the Dead | Action     |
-| tt2535470  | Wyrmwood: Road of the Dead | Comedy     |
-| tt2535470  | Wyrmwood: Road of the Dead | Horror     |
+| tconst    | primary_title              | genre.name |
+| --------- | -------------------------- | ---------- |
+| tt2535470 | Wyrmwood: Road of the Dead | Action     |
+| tt2535470 | Wyrmwood: Road of the Dead | Comedy     |
+| tt2535470 | Wyrmwood: Road of the Dead | Horror     |
 
 Similarly, a title be known under different names, for example depending on
 the country or media released on. A `title_alias` is related to exactly one

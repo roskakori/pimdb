@@ -5,7 +5,7 @@
 services:
   postgres:
     image: "postgres"
-    shm_size: 32gb  # Some complex joins need a lot of memory.
+    shm_size: 32gb # Some complex joins need a lot of memory.
     container_name: "pimdb_postgres"
     volumes:
       - postgres-data:/var/lib/postgresql/data
