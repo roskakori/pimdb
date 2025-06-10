@@ -26,7 +26,7 @@ follows:
 
    .. code-block:: bash
 
-       $ pre-commit install
+       $ uv run pre-commit install
 
 
 Testing
@@ -36,13 +36,13 @@ To run the test suite:
 
 .. code-block:: bash
 
-    $ pytest
+    $ uv run pytest
 
 To build and browse the coverage report in HTML format:
 
 .. code-block:: bash
 
-    $ pytest --cov-report=html
+    $ uv run pytest --cov-report=html
     $ open htmlcov/index.html  # macOS only
 
 .. envvar:: PIMDB_TEST_DATABASE
@@ -106,7 +106,7 @@ To build the documentation in HTML format:
 
 .. code-block:: bash
 
-    $ make -C docs html
+    $ uv run make -C docs html
     $ open docs/_build/html/index.html  # macOS only
 
 
@@ -122,7 +122,7 @@ the code without performing a commit, run:
 
 .. code-block:: bash
 
-    $ pre-commit run --all-files
+    $ uv run pre-commit run --all-files
 
 In particular, this applies `black <https://black.readthedocs.io/en/stable/>`_,
 `flake8 <https://flake8.pycqa.org/>`_ and
