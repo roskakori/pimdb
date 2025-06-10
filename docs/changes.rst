@@ -5,6 +5,8 @@ Version 0.3.1, 2025-06-10
 
 * Change package management to uv (issue
   `#50 <https://github.com/roskakori/pimdb/issues/50>`_).:
+* Change linter to ruff (issue
+  `#52 <https://github.com/roskakori/pimdb/issues/52>`_).:
 
 
 Version 0.3.0, 2024-05-13
