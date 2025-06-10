@@ -9,5 +9,5 @@ uv run pre-commit autoupdate
 echo "📖 Updating documentation"
 # HACK This is only needed because ReadTheDocs cannot extract the
 #  dependencies from pyproject.toml.
-uv export --no-hashes --format requirements-txt > docs/requirements.txt
+uv export --dev --no-hashes --format requirements-txt > docs/requirements.txt
 echo "🎉 Successfully updated dependencies"
