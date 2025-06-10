@@ -60,9 +60,7 @@ dev = [
 ]
 
 [tool.uv]
-default-groups = [
-    "dev",
-]
+default-groups = []
 
 [tool.hatch.build.targets.sdist]
 exclude = [".idea", ".github", ".readthedocs.yaml"]
