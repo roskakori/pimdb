@@ -3,6 +3,9 @@ name: Build
 
 on: [push, pull_request]
 
+env:
+  MAIN_PYTHON_VERSION: "3.12"  # Same as Ubuntu 24 LTS
+
 jobs:
   build:
 
@@ -11,8 +14,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-    env:
-      MAIN_PYTHON_VERSION: "3.12"  # Same as Ubuntu 24 LTS
 
     services:
       postgres:
