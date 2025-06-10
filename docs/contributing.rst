@@ -18,15 +18,8 @@ follows:
 
    .. code-block:: bash
 
-       $ python -m venv venv
+       $ uv sync
        $ . venv/bin/activate
-
-3. Install the required packages:
-
-   .. code-block:: bash
-
-       $ pip install --upgrade pip
-       $ pip install -r requirements.txt
 
 4. Install the pre-commit hook:
 
@@ -71,7 +64,6 @@ small test datasets. Use the environment variable
 .. code-block:: bash
 
     export PIMDB_FULL_TEST_DATABASE="sqlite:////Users/me/Development/pimdb/pimdb.db"
-
 
 
 .. _test-run-with-postgres:
@@ -141,9 +133,7 @@ Add a new release
 
 Build and check the wheel::
 
-  $ rm dist/*.whl
-  $ python3 setup.py bdist_wheel
-  $ twine check dist/*.whl
+  $ rm dist/*.whl && uv build
 
 Tag a release (simply replace ``0.x.x`` with the current version number)::
 
@@ -152,4 +142,4 @@ Tag a release (simply replace ``0.x.x`` with the current version number)::
 
 Upload release to PyPI::
 
-  $ twine upload dist
+  $ uv publish

@@ -1,3 +1,63 @@
+[project]
+name = "pimdb"
+version = "0.3.1"
+description = "build a database from IMDb datasets"
+dependencies = [
+    "psycopg2-binary~=2.9",
+    "requests==2.32.4",
+    "sqlalchemy~=1.4",
+]
+
+authors = [{ name = "Thomas Aglassinger", email = "roskakori@users.sourceforge.net" }]
+requires-python = ">=3.9, <4"
+readme = "README.md"
+license = "BSD-3-Clause"
+keywords = [
+    "IMDB",
+    "SQL",
+    "import",
+]
+classifiers = [
+     "Development Status :: 4 - Beta",
+     "Environment :: Console",
+     "Intended Audience :: Developers",
+     "Intended Audience :: Science/Research",
+     "License :: OSI Approved :: BSD License",
+     "Natural Language :: English",
+     "Operating System :: OS Independent",
+     "Programming Language :: Python :: 3 :: Only",
+     "Programming Language :: Python :: 3.9",
+     "Programming Language :: Python :: 3.10",
+     "Programming Language :: Python :: 3.11",
+     "Programming Language :: Python :: 3.12",
+     "Programming Language :: Python :: 3.13",
+     "Topic :: Software Development",
+     "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+[project.scripts]
+pimdb = "pimdb.command:main"
+
+[project.urls]
+Homepage = "https://github.com/roskakori/pimdb"
+Repository = "https://github.com/roskakori/pimdb.git"
+Documentation = "https://pimdb.readthedocs.io"
+"Issue Tracker" = "https://github.com/roskakori/pimdb/issues"
+Changes = "https://pimdb.readthedocs.io/en/latest/changes.html"
+
+[dependency-groups]
+dev = [
+    "black~=25.1",
+    "coverage~=7.8",
+    "coveralls~=4.0",
+    "hatchling>=1.27.0",
+    "pre-commit~=4.2",
+    "pytest~=8.4",
+    "pytest-cov~=6.1",
+    "sphinx~=7.3",
+    "sphinx-rtd-theme~=1.3",
+]
+
 [tool.black]
 line-length = 120
 include = '\.pyi?$'
@@ -6,6 +66,7 @@ target-version = [
     "py310",
     "py311",
     "py312",
+    # TODO#50 "py313",
 ]
 exclude = '''
 /(
@@ -21,8 +82,23 @@ line_length = 120
 default_section = "THIRDPARTY"
 known_first_party = "pimdb,tests"
 
+[tool.uv]
+default-groups = [
+    "dev",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [".idea", ".github", ".readthedocs.yaml"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pimdb"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.pytest.ini_options]
-minversion = "6.0"
+minversion = "8.4"
 addopts = [
     "-rA"
 ]

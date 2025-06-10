@@ -1,6 +1,12 @@
 Changes
 =======
 
+Version 0.3.1, 2025-06-10
+
+* Change package management to uv (issue
+  `#50 <https://github.com/roskakori/pimdb/issues/50>`_).:
+
+
 Version 0.3.0, 2024-05-13
 
 * Fix "Column length too big" errors by switching from fixed length
