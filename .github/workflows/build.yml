@@ -10,7 +10,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     env:
       MAIN_PYTHON_VERSION: "3.12"  # Same as Ubuntu 24 LTS
 
@@ -59,26 +59,24 @@ jobs:
           PIMDB_TEST_DATABASE: "postgresql+psycopg2://postgres:ci@localhost:5432/postgres"
         run: |
           uv run pytest --cov=pimdb --cov-branch
-      - name: Upload test coverage to Coveralls
+      - name: Update coveralls statistics
+        if: ${{ matrix.python-version == env.MAIN_PYTHON_VERSION }}
         env:
-          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ ${{ matrix.python-version }} == $MAIN_PYTHON_VERSION ]]; then coveralls; fi
-      - name: Build and install pimdb package
+          uv run coveralls --service=github
+      - name: Install pimdb package
         run: |
-          python setup.py bdist_wheel
-          if [[ ${{ matrix.python-version }} == $MAIN_PYTHON_VERSION ]]; then twine check dist/pimdb-*.whl; fi
           pip install dist/pimdb-*.whl
       - name: Build documentation
         run: |
-          make -C docs html
+          uv run make -C docs html
 
   check-style:
     runs-on: ubuntu-latest
     # Disable pre-commit check on main and production to prevent
     # pull request merges to fail with don't commit to branch".
-    if: github.ref != 'refs/heads/main'
+    if: github.ref != 'refs/heads/main' && matrix.python-version == env.MAIN_PYTHON_VERSION
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ env.MAIN_PYTHON_VERSION }}
