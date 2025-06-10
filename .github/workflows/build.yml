@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     # Disable pre-commit check on main and production to prevent
     # pull request merges to fail with don't commit to branch".
-    if: github.ref != 'refs/heads/main' && matrix.python-version == env.MAIN_PYTHON_VERSION
+    if: ${{ (github.ref != 'refs/heads/main') && (matrix.python-version == env.MAIN_PYTHON_VERSION) }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ env.MAIN_PYTHON_VERSION }}
