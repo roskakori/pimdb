@@ -497,7 +497,9 @@ class Database:
         table = self.normalized_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
-        result = dict(connection.execute(name_id_select))
+        # HACK: Ideally, we would just use `dict(...)` here, but this results in:
+        #  TypeError: 'LegacyCursorResult' object is not subscriptable
+        result = {name: id_ for name, id_ in connection.execute(name_id_select)}  # noqa: C416
         log.info("    found %d entries", len(result))
         return result
 
