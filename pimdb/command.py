@@ -23,7 +23,7 @@ _LOG_LEVEL_MAP = {
 }
 _ALL_NAME = "all"
 _NORMALIZED_NAME = "normalized"
-_VALID_NAMES = [_ALL_NAME, _NORMALIZED_NAME] + IMDB_DATASET_NAMES
+_VALID_NAMES = [_ALL_NAME, _NORMALIZED_NAME, *IMDB_DATASET_NAMES]
 
 
 class CommandName(Enum):
@@ -141,7 +141,7 @@ def _parser() -> argparse.ArgumentParser:
 def _check_bulk_size(parser: argparse.ArgumentParser, parsed_arguments: argparse.Namespace):
     min_bulk_size = 1
     try:
-        bulk_size = getattr(parsed_arguments, "bulk_size")
+        bulk_size = parsed_arguments.bulk_size
     except AttributeError:
         # No argument "--bulk" to check, just move on.
         pass
@@ -167,10 +167,7 @@ def _checked_imdb_dataset_names(parser: argparse.ArgumentParser, args: argparse.
         if len(args.names) >= 2:
             parser.error(f'if NAME "{_ALL_NAME}" is specified, it must be the only NAME')
 
-    if _ALL_NAME in args.names:
-        _check_special_name_is_only_name()
-        result = IMDB_DATASET_NAMES
-    elif _NORMALIZED_NAME in args.names:
+    if _ALL_NAME in args.names or _NORMALIZED_NAME in args.names:
         _check_special_name_is_only_name()
         result = IMDB_DATASET_NAMES
     else:
@@ -237,7 +234,7 @@ class _QueryCommand:
         with self._database.connection() as connection:
             sql_statement = text(self._sql_query)
             for row in connection.execute(sql_statement):
-                print("\t".join(str(item) for item in row))
+                print("\t".join(str(item) for item in row))  # noqa: T201
 
 
 _COMMAND_NAME_TO_COMMAND_CLASS_MAP = {

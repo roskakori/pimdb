@@ -11,12 +11,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(".")))
 
-from pimdb import __version__  # noqa: E402
+from pimdb import __version__
 
 # -- Project information -----------------------------------------------------
 
 project = "pimdb"
-copyright = "2020, Thomas Aglassinger"
+copyright = "2020, Thomas Aglassinger"  # noqa: A001
 author = "Thomas Aglassinger"
 
 # The full version, including alpha/beta/rc tags

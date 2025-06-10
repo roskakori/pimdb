@@ -23,9 +23,11 @@ def test_can_postgres_bulk_load_tsv():
     for dataset_to_load in ImdbDataset:
         target_table = database.imdb_dataset_to_table_map[dataset_to_load]
         source_tsv_path = os.path.join(TESTS_DATA_PATH, dataset_to_load.tsv_filename)
-        with open(source_tsv_path, "rb") as source_tsv_file:
-            with PostgresBulkLoad(database.engine) as bulk_load:
-                bulk_load.load(target_table, source_tsv_file)
+        with (
+            open(source_tsv_path, "rb") as source_tsv_file,
+            PostgresBulkLoad(database.engine) as bulk_load,
+        ):
+            bulk_load.load(target_table, source_tsv_file)
         with database.connection() as connection:
             database.check_table_has_data(connection, target_table)
 
@@ -42,8 +44,10 @@ def test_fails_on_postgres_bulk_load_tsv_with_duplicate():
         TESTS_DATA_PATH, test_fails_on_postgres_bulk_load_tsv_with_duplicate.__name__, dataset_to_load.tsv_filename
     )
     with pytest.raises(Exception, match=".*duplicate key.*"):
-        with open(source_tsv_path, "rb") as source_tsv_file:
-            with PostgresBulkLoad(database.engine) as bulk_load:
-                bulk_load.load(target_table, source_tsv_file)
+        with (
+            open(source_tsv_path, "rb") as source_tsv_file,
+            PostgresBulkLoad(database.engine) as bulk_load,
+        ):
+            bulk_load.load(target_table, source_tsv_file)
         with database.connection() as connection:
             database.check_table_has_data(connection, target_table)

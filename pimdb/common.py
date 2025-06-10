@@ -21,8 +21,6 @@ log = logging.getLogger("pimdb")
 class PimdbError(Exception):
     """Error representing that something went wrong during an pimdb operation."""
 
-    pass
-
 
 class PimdbTsvError(Exception):
     def __init__(self, path: str, row_number: int, base_message: str):
@@ -131,7 +129,6 @@ class LastModifiedMap:
         except FileNotFoundError:
             # If we never cached anything before, just move on.
             log.debug('cannot find last modified map "%s", enforcing downloads', self._last_modified_map_path)
-            pass
         except Exception as error:
             log.warning(
                 'cannot process last modified map "%s", enforcing downloads: %s', self._last_modified_map_path, error
@@ -307,7 +304,9 @@ def camelized_dot_name(name: str) -> str:
             change_to_upper = True
         else:
             if change_to_upper:
-                char = char.upper()
+                actual_char = char.upper()
                 change_to_upper = False
-            result += char
+            else:
+                actual_char = char
+            result += actual_char
     return result

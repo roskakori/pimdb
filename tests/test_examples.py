@@ -1,6 +1,7 @@
 """
 Run the examples and see they return at least one row.
 """
+
 import os
 from glob import glob
 

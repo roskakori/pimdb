@@ -1,5 +1,6 @@
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
+import contextlib
 import os
 
 import pytest
@@ -68,10 +69,8 @@ def test_can_download_title_ratings():
     #  2. It fails in case the remote dataset file changes between the first and second download.
     expected_target_path = output_path(ImdbDataset.TITLE_RATINGS.filename)
     # Ensure that the file to be downloaded does not exist already.
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.remove(expected_target_path)
-    except FileNotFoundError:
-        pass
 
     exit_code = exit_code_for(
         [
