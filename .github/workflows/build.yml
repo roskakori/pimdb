@@ -71,7 +71,7 @@ jobs:
           pip install dist/pimdb-*.whl
       - name: Build documentation
         run: |
-          uv run make -C docs html
+          uv run mkdocs build
 
   check-style:
     runs-on: ubuntu-latest
