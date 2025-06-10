@@ -1,4 +1,5 @@
 """Functions and constants commonly used by multiple tests."""
+
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
 import gzip
@@ -53,11 +54,13 @@ def gzipped_tests_data_path(dataset: ImdbDataset) -> str:
 
     if has_to_build_gz:
         _log.info('creating compressed "%s" from "%s"', tsv_gz_path, tsv_path)
-        with gzip.open(tsv_gz_path, "wb") as target_tsv_gz_file:
-            with open(tsv_path, "rb") as source_tsv_file:
-                # NOTE: This reads the entire source file into memory, which is fine for testing
-                # but would be evil in a production environment.
-                target_tsv_gz_file.write(source_tsv_file.read())
+        with (
+            gzip.open(tsv_gz_path, "wb") as target_tsv_gz_file,
+            open(tsv_path, "rb") as source_tsv_file,
+        ):
+            # NOTE: This reads the entire source file into memory, which is fine for testing
+            # but would be evil in a production environment.
+            target_tsv_gz_file.write(source_tsv_file.read())
     return tsv_gz_path
 
 

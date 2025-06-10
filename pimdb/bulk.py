@@ -1,4 +1,5 @@
 """Database bulk operations."""
+
 # Copyright (c) 2020, Thomas Aglassinger.
 # All rights reserved. Distributed under the BSD License.
 from typing import IO, Any, Optional
@@ -16,8 +17,6 @@ class BulkError(Exception):
     """
     Error indicating that something went wrong during a bulk operation.
     """
-
-    pass
 
 
 class BulkInsert:

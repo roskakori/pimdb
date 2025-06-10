@@ -77,10 +77,9 @@ class DatabaseSystem(Enum):
 def database_system_from_engine_info(engine_info: str) -> DatabaseSystem:
     if engine_info.startswith("sqlite:///"):
         return DatabaseSystem.SQLITE
-    elif engine_info.startswith("postgresql://") or engine_info.startswith("postgresql+psycopg2://"):
+    if engine_info.startswith(("postgresql://", "postgresql+psycopg2://")):
         return DatabaseSystem.POSTGRES
-    else:
-        return DatabaseSystem.OTHER
+    return DatabaseSystem.OTHER
 
 
 def imdb_dataset_table_infos() -> list[tuple[ImdbDataset, list[Column]]]:
@@ -328,14 +327,14 @@ def typed_column_to_value_map(
         if raw_value == "\\N":
             value = None
             if not column.nullable:
-                if column_python_type == bool:
+                if column_python_type is bool:
                     value = False
                 elif column_python_type in (float, int):
                     value = 0
-                elif column_python_type == str:
+                elif column_python_type is str:
                     value = ""
                 else:
-                    assert False, f"column_python_type={column_python_type}"
+                    raise AssertionError(f"column_python_type={column_python_type}")
                 log.warning(
                     'column "%s" of python type %s should not be null, using "%s" instead; raw_value_map=%s',
                     column.name,
@@ -343,7 +342,7 @@ def typed_column_to_value_map(
                     value,
                     column_name_to_raw_value_map,
                 )
-        elif column_python_type == bool:
+        elif column_python_type is bool:
             if raw_value == "1":
                 value = True
             elif raw_value == "0":
@@ -498,7 +497,7 @@ class Database:
         table = self.normalized_table_for(normalized_table_key)
         log.info("  building mapping from %s.%s to %s.%s", table.name, natural_key_column, table.name, id_column)
         name_id_select = select([getattr(table.columns, natural_key_column), getattr(table.columns, id_column)])
-        result = {name: id_ for name, id_ in connection.execute(name_id_select)}
+        result = dict(connection.execute(name_id_select))
         log.info("    found %d entries", len(result))
         return result
 
@@ -534,42 +533,46 @@ class Database:
         if self._database_system == DatabaseSystem.POSTGRES:
             try:
                 with TableBuildStatus(connection, table_to_modify) as table_build_status:
-                    with gzip.open(gzipped_tsv_path, "rb") as gzipped_tsv_file:
-                        with PostgresBulkLoad(self._engine) as bulk_load:
-                            bulk_load.load(table_to_modify, gzipped_tsv_file)
+                    with (
+                        gzip.open(gzipped_tsv_path, "rb") as gzipped_tsv_file,
+                        PostgresBulkLoad(self._engine) as bulk_load,
+                    ):
+                        bulk_load.load(table_to_modify, gzipped_tsv_file)
                     table_build_status.log_added_rows(connection)
                     has_been_inserted_quickly = True
             except Exception as error:
                 log.warning("cannot quickly insert data, reverting to slower variant (reason: %s)", error)
 
         if not has_been_inserted_quickly:
-            with connection.begin():
-                with TableBuildStatus(connection, table_to_modify) as table_build_status:
-                    table_build_status.clear_table()
+            with (
+                connection.begin(),
+                TableBuildStatus(connection, table_to_modify) as table_build_status,
+            ):
+                table_build_status.clear_table()
 
-                    # Insert all rows from TSV.
-                    key_columns = self.key_columns(imdb_dataset)
-                    gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
-                    with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
+                # Insert all rows from TSV.
+                key_columns = self.key_columns(imdb_dataset)
+                gzipped_tsv_reader = GzippedTsvReader(gzipped_tsv_path, key_columns, log_progress)
+                with BulkInsert(connection, table_to_modify, self._bulk_size) as bulk_insert:
+                    try:
                         for raw_column_to_row_map in gzipped_tsv_reader.column_names_to_value_maps():
-                            try:
-                                bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
-                            except PimdbError as error:
-                                raise PimdbError(
-                                    f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
-                                )
-                        table_build_status.log_added_rows(bulk_insert._count)
+                            bulk_insert.add(typed_column_to_value_map(table_to_modify, raw_column_to_row_map))
+                    except PimdbError as error:
+                        raise PimdbError(
+                            f"{gzipped_tsv_path} ({gzipped_tsv_reader.row_number}): cannot process row: {error}"
+                        ) from error
+                    table_build_status.log_added_rows(bulk_insert.count)
 
     def create_normalized_tables(self):
         log.info("creating normalized tables")
         self._drop_obsolete_normalized_tables()
-        for normalized_table_key, options in report_table_infos(self._normalized_index_name_pool):
-            try:
+        try:
+            for normalized_table_key, options in report_table_infos(self._normalized_index_name_pool):
                 self._normalized_name_to_table_map[normalized_table_key] = Table(
                     normalized_table_key.value, self.metadata, *options
                 )
-            except SQLAlchemyError as error:
-                raise PimdbError(f'cannot create report table "{normalized_table_key.value}": {error}') from error
+        except SQLAlchemyError as error:
+            raise PimdbError(f'cannot create report table "{normalized_table_key.value}": {error}') from error
         if self._has_to_drop_tables:
             self.metadata.drop_all()
         self.metadata.create_all()
@@ -604,7 +607,7 @@ class Database:
                     try:
                         values_from_json = json.loads(raw_value)
                     except Exception as error:
-                        raise PimdbError(f"cannot extract JSON from {raw_value!r}: {error}")
+                        raise PimdbError(f"cannot extract JSON from {raw_value!r}: {error}") from error
                     if not isinstance(values_from_json, list):
                         raise PimdbError(f"JSON column must be a list but is: {raw_value!r}")
                     values.update(values_from_json)
@@ -714,7 +717,7 @@ class Database:
                     raise PimdbError(
                         f"cannot JSON parse {title_principals_table.name}.{characters_json_column.name}: "
                         f"{characters_json!r}: {error}"
-                    )
+                    ) from error
                 if not isinstance(character_names_from_json, list):
                     raise PimdbError(
                         f"{title_principals_table.name}.{characters_json_column.name} must be a JSON list but is: "
@@ -732,26 +735,30 @@ class Database:
         )
 
         character_table = self.normalized_table_for(NormalizedTableKey.CHARACTER)
-        with TableBuildStatus(connection, character_table) as character_build_status:
-            with connection.begin():
-                character_build_status.clear_table()
-                with BulkInsert(connection, character_table, self._bulk_size) as character_bulk_insert:
-                    for character_name, character_id in character_name_to_character_id_map.items():
-                        character_bulk_insert.add({"id": character_id, "name": character_name})
-                    character_build_status.log_added_rows(character_bulk_insert.count)
+        with (
+            TableBuildStatus(connection, character_table) as character_build_status,
+            connection.begin(),
+        ):
+            character_build_status.clear_table()
+            with BulkInsert(connection, character_table, self._bulk_size) as character_bulk_insert:
+                for character_name, character_id in character_name_to_character_id_map.items():
+                    character_bulk_insert.add({"id": character_id, "name": character_name})
+                character_build_status.log_added_rows(character_bulk_insert.count)
 
         temp_characters_to_character_table = self.normalized_table_for(NormalizedTableKey.TEMP_CHARACTERS_TO_CHARACTER)
-        with TableBuildStatus(connection, temp_characters_to_character_table) as table_build_status:
-            with connection.begin():
-                table_build_status.clear_table()
-                with BulkInsert(connection, temp_characters_to_character_table, self._bulk_size) as bulk_insert:
-                    for character_json, character_names in characters_json_to_character_names_map.items():
-                        for ordering, character_name in enumerate(character_names, start=1):
-                            character_id = character_name_to_character_id_map[character_name]
-                            bulk_insert.add(
-                                {"characters": character_json, "character_id": character_id, "ordering": ordering}
-                            )
-                    table_build_status.log_added_rows(bulk_insert.count)
+        with (
+            TableBuildStatus(connection, temp_characters_to_character_table) as table_build_status,
+            connection.begin(),
+        ):
+            table_build_status.clear_table()
+            with BulkInsert(connection, temp_characters_to_character_table, self._bulk_size) as bulk_insert:
+                for character_json, character_names in characters_json_to_character_names_map.items():
+                    for ordering, character_name in enumerate(character_names, start=1):
+                        character_id = character_name_to_character_id_map[character_name]
+                        bulk_insert.add(
+                            {"characters": character_json, "character_id": character_id, "ordering": ordering}
+                        )
+                table_build_status.log_added_rows(bulk_insert.count)
 
     def build_participation_to_character_table(self, connection: Connection):
         participation_to_character_table = self.normalized_table_for(NormalizedTableKey.PARTICIPATION_TO_CHARACTER)
@@ -991,7 +998,11 @@ class Database:
                             bulk_insert.add({"genre_id": genre_id, "ordering": ordering, "title_id": title_id})
                     table_build_status.log_added_rows(bulk_insert.count)
 
-    @functools.lru_cache(None)
+    # FIXME Redesign caching so it does not cause memory leaks. See
+    #  <https://docs.astral.sh/ruff/rules/cached-instance-method/>.
+    #  For now, this is no issue in practice because only one instance
+    #  of `Database` exists during the runtime of the program.
+    @functools.lru_cache(None)  # noqa: B019
     def mappable_title_alias_types(self, raw_title_types: str) -> list[str]:
         # TODO: Make inner function of build_title_alias_to_title_alias_type_table().
         result = []
@@ -1082,7 +1093,7 @@ class Database:
                 with BulkInsert(connection, title_alias_to_title_alias_type_table, self._bulk_size) as bulk_insert:
                     for (
                         title_alias_id,
-                        title_alias_ordering,
+                        _title_alias_ordering,
                         raw_title_alias_types,
                     ) in connection.execute(select_title_akas_data):
                         for title_alias_type_ordering, title_alias_type_name in enumerate(

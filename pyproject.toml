@@ -47,40 +47,16 @@ Changes = "https://pimdb.readthedocs.io/en/latest/changes.html"
 
 [dependency-groups]
 dev = [
-    "black~=25.1",
     "coverage~=7.8",
     "coveralls~=4.0",
     "hatchling>=1.27.0",
     "pre-commit~=4.2",
     "pytest~=8.4",
     "pytest-cov~=6.1",
+    "ruff>=0.11.13",
     "sphinx~=7.3",
     "sphinx-rtd-theme~=1.3",
 ]
-
-[tool.black]
-line-length = 120
-include = '\.pyi?$'
-target-version = [
-    "py39",
-    "py310",
-    "py311",
-    "py312",
-    # TODO#50 "py313",
-]
-exclude = '''
-/(
-  \.git
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-line_length = 120
-default_section = "THIRDPARTY"
-known_first_party = "pimdb,tests"
 
 [tool.uv]
 default-groups = [
@@ -106,5 +82,120 @@ testpaths = [
     "tests",
 ]
 
-[pycodestyle]
-max-line-length = 120
+[tool.ruff]
+exclude = [
+    ".eggs",
+    ".git",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "build",
+    "dist",
+    "htmlcov",
+]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+ignore = [
+    # Missing trailing comma → May cause conflicts when used with the formatter.
+    "COM812",
+    # Too many branches
+    "PLR0912",
+    # Too many arguments in function definition
+    "PLR0913",
+    # Too many statements
+    "PLR0915",
+    # Magic value used in comparison
+    "PLR2004",
+    # TODO Consider using pathlib.
+    "PTH100",
+    "PTH103",
+    "PTH107",
+    "PTH109",
+    "PTH110",
+    "PTH112",
+    "PTH114",
+    "PTH118",
+    "PTH119",
+    "PTH120",
+    "PTH122",
+    "PTH123",
+    "PTH202",
+    "PTH204",
+    "PTH207",
+    "PTH208",
+    # Unneccesarry assign → We regularly use `result = ...; return result` to examine the result in the debugger.
+    "RET504",
+    # Mutable class attributes should be annotated with `typing.ClassVar`
+    "RUF012",
+    # Avoid specifying long messages outside the exception class
+    "TRY003",
+    # Abstract `raise` to an inner function
+    "TRY301",
+]
+select = [
+    # flake8-builtins
+    "A",
+    # flake8-bugbear
+    "B",
+    # flake8-commas
+    "COM",
+    # flake8-comprehensions
+    "C4",
+    # flake8-django
+    "DJ",
+    # flake8-datetimez
+    "DTZ",
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # isort
+    "I",
+    # flake8-no-pep420
+    "INP",
+    #  flake8-gettext
+    "INT",
+    # flake8-logging
+    "LOG",
+    # perflint
+    "PERF",
+    # pygrep-hooks
+    "PGH",
+    # flake8-pie
+    "PIE",
+    # pylint
+    "PL",
+    # flake8-use-pathlib
+    "PTH",
+    # refactor
+    "R",
+    # flake8-raise
+    "RSE",
+    # flake8-return
+    "RET",
+    # ruff specific rules
+    "RUF",
+    # flake8-self
+    "SLF",
+    # flake8-simplify
+    "SIM",
+    # tryceratops
+    "TRY",
+    # flake8-debugger
+    "T10",
+    # flake8-print
+    "T20",
+    # pyupgrade
+    "UP",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pimdb", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/conf.py" = ["INP001"]
