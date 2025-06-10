@@ -11,7 +11,7 @@ repos:
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -23,4 +23,3 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: fix-byte-order-marker
-      - id: requirements-txt-fixer
