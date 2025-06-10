@@ -204,3 +204,4 @@ dmypy.json
 *.db
 *.db-journal
 *.tsv.gz
+/.idea/ruff.xml
