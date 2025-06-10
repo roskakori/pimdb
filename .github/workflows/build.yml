@@ -50,7 +50,7 @@ jobs:
       - name: Install dependencies
         if: steps.cached-uv-dependencies.outputs.cache-hit != 'true'
         run: |
-          uv sync
+          uv sync --all-groups
       - name: Build pimdb package
         run: |
           uv build
